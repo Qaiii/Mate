@@ -74,7 +74,11 @@ draft → analyzing → proposed ──confirm──→ approved → running →
 
 ## 兼容性
 
-针对 `@deepseek-ai/dsh` **0.2.1-rc.5**（`engines.dsh: >=0.2.1-rc.5 <0.3.0`）。升级 DSH 后重点核对：`main` / `sidebar.panellist` 槽位、`connection.fetch.register`、`sessionController` 方法签名、`storageDomain` 域格式。
+已实测运行于 `@deepseek-ai/dsh` **0.2.1-rc.5** 与 **0.2.2-rc.1**（桌面版 0.2.2-rc.1 上完整跑通 分析 → 派发 → 会话执行 → 汇总 → 验收；`pnpm typecheck` 对 0.2.2-rc.1 的 SDK 类型通过）。
+
+- `engines.dsh: >=0.2.1-rc.5 <0.3.0`；peer 依赖同为 `>=0.2.1-rc.5 <0.3.0`。
+- 运行时依赖：`@deepseek-ai/cordis ^4.0.5`（实测 4.1.0）、`@deepseek-ai/schemastery ^3.18.5`（实测 3.19.0）。
+- 升级 DSH 后重点核对：`main` / `sidebar.panellist` 槽位、`connection.fetch.register`、`sessionController` 方法签名、`storageDomain` 域格式、`api-session/*` 事件。
 
 ## 许可
 
