@@ -5,7 +5,7 @@ import { RequirementDrawer } from './drawer.js'
 import { formatRelative, projectLabel, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
 
-type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed' | 'sessions'
+type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed'
 
 const COLUMNS: Array<{ key: ColumnKey; statuses: RequirementStatus[] }> = [
   { key: 'pending', statuses: ['draft', 'analyzing', 'clarifying', 'proposed', 'approved'] },
@@ -13,10 +13,9 @@ const COLUMNS: Array<{ key: ColumnKey; statuses: RequirementStatus[] }> = [
   { key: 'review', statuses: ['awaiting_review'] },
   { key: 'done', statuses: ['done'] },
   { key: 'failed', statuses: ['failed', 'cancelled'] },
-  { key: 'sessions', statuses: [] },
 ]
 
-const STATUS_COLUMN: Record<RequirementStatus, Exclude<ColumnKey, 'sessions'>> = {
+const STATUS_COLUMN: Record<RequirementStatus, ColumnKey> = {
   draft: 'pending',
   analyzing: 'pending',
   clarifying: 'pending',
@@ -77,7 +76,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   }, [requirements, mateFilter, projectFilter, columnFilter, query])
 
   const byColumn = React.useMemo(() => {
-    const groups: Record<Exclude<ColumnKey, 'sessions'>, RequirementView[]> = { pending: [], running: [], review: [], done: [], failed: [] }
+    const groups: Record<ColumnKey, RequirementView[]> = { pending: [], running: [], review: [], done: [], failed: [] }
     for (const requirement of filtered) groups[STATUS_COLUMN[requirement.status]].push(requirement)
     return groups
   }, [filtered])
@@ -115,16 +114,26 @@ export function MatePanel(context: PanelContext): React.ReactElement {
     | { kind: 'req'; at: number; requirement: RequirementView }
     | { kind: 'session'; at: number; session: LiveSessionView }
   > => {
-    if (key === 'sessions') {
-      if (columnFilter !== 'all' && columnFilter !== 'sessions') return []
-      return sessionCards.map((session) => ({ kind: 'session' as const, at: session.updatedAt, session }))
-    }
-    const groups = byColumn as Record<Exclude<ColumnKey, 'sessions'>, RequirementView[]>
-    return groups[key].map((requirement) => ({
+    const fromRequirements = byColumn[key].map((requirement) => ({
       kind: 'req' as const,
       at: requirement.updatedAt,
       requirement,
-    })).sort((a, b) => b.at - a.at)
+    }))
+    // Untracked sessions join the column that matches their state: a running
+    // session is in progress, an idle one has finished its last turn.
+    const sessionsForColumn = columnFilter === 'all' || columnFilter === key
+      ? key === 'running'
+        ? sessionCards.filter((session) => session.running)
+        : key === 'done'
+          ? sessionCards.filter((session) => !session.running)
+          : []
+      : []
+    const fromSessions = sessionsForColumn.map((session) => ({
+      kind: 'session' as const,
+      at: session.updatedAt,
+      session,
+    }))
+    return [...fromRequirements, ...fromSessions].sort((a, b) => b.at - a.at)
   }
 
   return (
@@ -242,7 +251,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
       ) : view === 'board' ? (
         <div className="mate-board">
           {COLUMNS.map((column) => (
-            <div key={column.key} className={`mate-col${column.key === 'sessions' ? ' mate-col-sessions' : ''}`}>
+            <div key={column.key} className="mate-col">
               <div className="mate-col-head">
                 <span>{t(`column.${column.key}`)}</span>
                 <span className="mate-count">{cardsFor(column.key).length}</span>
@@ -362,6 +371,9 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                 ? `${t('action.testConnection')}: OK (${current.snapshot?.liveSessions.length ?? 0} sessions, rev ${current.rev})`
                 : current.error,
             )
+          }}
+          onRestoreHidden={async (sessionId) => {
+            await controller.run('restore:' + sessionId, COMMANDS.sessionHide, { sessionId, hidden: false })
           }}
         />
       ) : null}
@@ -487,6 +499,8 @@ function SessionCard({ session, t, lang, busy, onOpen, onAdopt, onHide }: {
     </div>
   )
 }
+
+
 
 
 

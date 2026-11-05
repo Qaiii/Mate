@@ -314,13 +314,14 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   )
 }
 
-export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest }: {
+export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, onRestoreHidden }: {
   snapshot: Snapshot
   t: Translator
   busy: boolean
   onClose: () => void
   onSubmit: (payload: { defaultMateId: string | null; pollMs: number }) => void | Promise<void>
   onTest: () => void | Promise<void>
+  onRestoreHidden: (sessionId: string) => void | Promise<void>
 }): React.ReactElement {
   const [defaultMateId, setDefaultMateId] = React.useState(snapshot.settings.defaultMateId ?? '')
   const [pollMs, setPollMs] = React.useState(String(snapshot.settings.pollMs))
@@ -376,6 +377,22 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest }:
           <Button onClick={() => { void onTest() }}>{t('action.testConnection')}</Button>
         </div>
       </div>
+      <Field label={t('settings.hiddenSessions')}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {snapshot.liveSessions.filter((session) => session.hidden).length === 0
+            ? <span className="mate-sub">{t('settings.noneHidden')}</span>
+            : snapshot.liveSessions.filter((session) => session.hidden).map((session) => (
+              <div key={session.sessionId} className="mate-row" style={{ cursor: 'default' }}>
+                <span className="mate-row-main">
+                  <span className="mate-row-title">{session.title}</span>
+                  <span className="mate-row-meta">{session.cwd || '—'}</span>
+                </span>
+                <Button onClick={() => { void onRestoreHidden(session.sessionId) }}>{t('action.restore')}</Button>
+              </div>
+            ))}
+        </div>
+      </Field>
     </Modal>
   )
 }
+

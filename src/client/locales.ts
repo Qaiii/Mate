@@ -35,7 +35,6 @@ const ZH: Record<string, string> = {
   'column.review': '待验收',
   'column.done': '已完成',
   'column.failed': '异常',
-  'column.sessions': '已有会话',
   'status.draft': '草稿',
   'status.analyzing': '分析中',
   'status.clarifying': '澄清中',
@@ -130,6 +129,9 @@ const ZH: Record<string, string> = {
   'settings.sessionCount': '可见会话',
   'settings.mateCount': 'Mate 数',
   'action.testConnection': '测试连接',
+  'action.restore': '恢复显示',
+  'settings.hiddenSessions': '已隐藏的会话',
+  'settings.noneHidden': '没有隐藏的会话',
   'notice.copied': '已复制',
   'error.loadFailed': '无法连接 Mate 主进程：{message}',
   'error.starting': 'Mate 正在启动，请稍候…',
@@ -172,7 +174,6 @@ const EN: Record<string, string> = {
   'column.review': 'Awaiting review',
   'column.done': 'Done',
   'column.failed': 'Problems',
-  'column.sessions': 'Existing sessions',
   'status.draft': 'Draft',
   'status.analyzing': 'Analyzing',
   'status.clarifying': 'Clarifying',
@@ -267,6 +268,9 @@ const EN: Record<string, string> = {
   'settings.sessionCount': 'Visible sessions',
   'settings.mateCount': 'Mates',
   'action.testConnection': 'Test connection',
+  'action.restore': 'Restore',
+  'settings.hiddenSessions': 'Hidden sessions',
+  'settings.noneHidden': 'No hidden sessions',
   'notice.copied': 'Copied',
   'error.loadFailed': 'Cannot reach the Mate host half: {message}',
   'error.starting': 'Mate is starting, please wait…',
@@ -289,4 +293,6 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
+
 
