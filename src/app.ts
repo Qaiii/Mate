@@ -117,6 +117,8 @@ export class MateApp {
       case COMMANDS.requirementSplit: return this.splitRequirement(args)
       case COMMANDS.requirementAddChild: return this.addChild(args)
       case COMMANDS.requirementDelete: return this.deleteRequirement(args)
+      case COMMANDS.requirementAdoptSession: return this.adoptSession(args)
+      case COMMANDS.sessionHide: return this.hideSession(args)
       case COMMANDS.mateCreate: return this.createMate(args)
       case COMMANDS.mateUpdate: return this.updateMate(args)
       case COMMANDS.mateArchive: return this.archiveMate(args)
@@ -745,14 +747,87 @@ export class MateApp {
 
   private async listLive() {
     const items = (await this.deps.controller.list({}, this.lifetime.signal)).items
-    return items.slice(0, 40).map((item) => ({
+    const hidden = this.deps.store.hiddenSessionIds()
+    const linked = new Map<string, string>()
+    for (const requirement of this.deps.store.listRequirements()) {
+      if (requirement.dispatch !== null) linked.set(requirement.dispatch.sessionId, requirement.id)
+    }
+    return items.slice(0, 60).map((item) => ({
       sessionId: item.sessionId,
       title: sessionTitle(item),
       cwd: typeof item.cwd === 'string' ? item.cwd : '',
       running: item.running === true,
       pendingInput: [] as string[],
       updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : 0,
+      blank: item.blank === true,
+      origin: item.origin === 'subagent' ? 'subagent' as const : null,
+      linkedRequirementId: linked.get(item.sessionId) ?? null,
+      hidden: hidden.has(item.sessionId),
     }))
+  }
+
+  /** Track one existing session as a requirement without dispatching anything. */
+  private async adoptSession(args: Record<string, unknown>): Promise<RequirementView> {
+    const sessionId = requiredString(args.sessionId, 'session-required', 'A session id is required')
+    const existing = this.deps.store.listRequirements()
+      .find((item) => item.dispatch?.sessionId === sessionId)
+    if (existing !== undefined) return existing
+    const items = (await this.deps.controller.list({}, this.lifetime.signal)).items
+    const summary = items.find((item) => item.sessionId === sessionId)
+    if (summary === undefined) throw new CommandError('session-not-found', `Session not found: ${sessionId}`)
+    const settings = this.deps.store.settings()
+    const mateId = typeof args.mateId === 'string' && args.mateId.length > 0
+      ? args.mateId
+      : settings.defaultMateId ?? this.deps.store.listMates().find((candidate) => !candidate.archived)?.id
+    const mate = this.requireMate(mateId)
+    const projectPath = typeof summary.cwd === 'string' ? summary.cwd : ''
+    const now = Date.now()
+    const title = (optionalString(args.title) || sessionTitle(summary) || `会话 ${sessionId.slice(0, 8)}`).slice(0, 200)
+    const requirement: RequirementView = {
+      id: newRequirementId(),
+      number: await this.deps.store.nextNumber(),
+      title,
+      brief: `Adopted from existing session ${sessionId}.`,
+      projectPath,
+      projectTitle: baseName(projectPath),
+      priority: 'normal',
+      mateId: mate.id,
+      mateName: mate.name,
+      mateModel: `${mate.model.provider}/${mate.model.model}`,
+      parentId: null,
+      kind: 'requirement',
+      status: summary.running ? 'running' : 'awaiting_review',
+      autonomy: mate.autonomy,
+      sessionOverrides: null,
+      discussion: [],
+      analysis: null,
+      plan: null,
+      dispatch: {
+        sessionId,
+        requestedAt: now,
+        lastRunningAt: summary.running ? now : null,
+        reused: true,
+        pendingInput: [],
+      },
+      result: null,
+      errors: [],
+      createdAt: now,
+      updatedAt: now,
+      rev: 1,
+    }
+    await this.deps.store.putRequirement(requirement)
+    if (!summary.running) this.scheduleSummary(requirement.id)
+    return requirement
+  }
+
+  private async hideSession(args: Record<string, unknown>): Promise<{ hidden: boolean }> {
+    const sessionId = requiredString(args.sessionId, 'session-required', 'A session id is required')
+    if (args.hidden === false) {
+      await this.deps.store.unhideSession(sessionId)
+      return { hidden: false }
+    }
+    await this.deps.store.hideSession(sessionId)
+    return { hidden: true }
   }
 
   private async projects(): Promise<ProjectOption[]> {

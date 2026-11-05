@@ -148,6 +148,14 @@ export interface LiveSessionView {
   running: boolean
   pendingInput: string[]
   updatedAt: number
+  /** A session that has never produced a turn; shown nowhere on the board. */
+  blank: boolean
+  /** Subagent children belong to a parent session and are not board cards. */
+  origin: 'subagent' | null
+  /** Requirement this session was dispatched for, when Mate already tracks it. */
+  linkedRequirementId: string | null
+  /** The user asked this session not to appear as an untracked board card. */
+  hidden: boolean
 }
 
 /** Client-visible plugin release, kept in step with package.json by hand. */
@@ -215,6 +223,8 @@ export const COMMANDS = {
   requirementSplit: 'requirement.split',
   requirementAddChild: 'requirement.addChild',
   requirementDelete: 'requirement.delete',
+  requirementAdoptSession: 'requirement.adoptSession',
+  sessionHide: 'session.hide',
   mateCreate: 'mate.create',
   mateUpdate: 'mate.update',
   mateArchive: 'mate.archive',

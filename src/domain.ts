@@ -164,6 +164,17 @@ const GlobalSchema: z.ZodType<MateGlobalRecord> = z.object({
   lastStartedAt: z.number().optional(),
 })
 
+/** A session the user chose not to show as an untracked board card. */
+export interface HiddenSessionRecord {
+  sessionId: string
+  hiddenAt: number
+}
+
+const HiddenSessionSchema: z.ZodType<HiddenSessionRecord> = z.object({
+  sessionId: z.string(),
+  hiddenAt: z.number(),
+})
+
 /** Storage domain declaration: one unit file under `$DSH_HOME/storages/mate.json`. */
 export const mateDomain = defineDomain({
   name: 'mate',
@@ -173,7 +184,9 @@ export const mateDomain = defineDomain({
     mates: domainTable<string, MateView>(MateSchema),
     requirements: domainTable<string, RequirementView>(RequirementSchema),
     projects: domainTable<string, ProjectRecord>(ProjectSchema),
+    hidden_sessions: domainTable<string, HiddenSessionRecord>(HiddenSessionSchema),
   },
 })
 
 export type MateDomain = typeof mateDomain
+

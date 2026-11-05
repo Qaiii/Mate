@@ -114,7 +114,9 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
         <section className="mate-section">
           <h3>{t('drawer.analysis')}</h3>
           {analysis === null ? (
-            <div className="mate-panel mate-prose">{t('error.starting')}</div>
+            <div className="mate-panel mate-prose">
+              {requirement.dispatch?.reused === true ? t('drawer.adoptedHint') : t('error.starting')}
+            </div>
           ) : (
             <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="mate-prose">{analysis.summary}</div>

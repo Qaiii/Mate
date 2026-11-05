@@ -7,6 +7,8 @@ export interface SessionSummaryLike {
   cwd?: string
   running: boolean
   updatedAt: number
+  blank?: boolean
+  origin?: 'subagent'
   projections?: { values?: Record<string, unknown> }
 }
 

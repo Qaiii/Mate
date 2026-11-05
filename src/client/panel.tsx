@@ -1,11 +1,11 @@
 import React from 'react'
-import { COMMANDS, type MateView, type RequirementStatus, type RequirementView, type Snapshot } from '../shared.js'
+import { COMMANDS, type LiveSessionView, type MateView, type RequirementStatus, type RequirementView, type Snapshot } from '../shared.js'
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
 import { formatRelative, projectLabel, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
 
-type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed'
+type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed' | 'sessions'
 
 const COLUMNS: Array<{ key: ColumnKey; statuses: RequirementStatus[] }> = [
   { key: 'pending', statuses: ['draft', 'analyzing', 'clarifying', 'proposed', 'approved'] },
@@ -13,9 +13,10 @@ const COLUMNS: Array<{ key: ColumnKey; statuses: RequirementStatus[] }> = [
   { key: 'review', statuses: ['awaiting_review'] },
   { key: 'done', statuses: ['done'] },
   { key: 'failed', statuses: ['failed', 'cancelled'] },
+  { key: 'sessions', statuses: [] },
 ]
 
-const STATUS_COLUMN: Record<RequirementStatus, ColumnKey> = {
+const STATUS_COLUMN: Record<RequirementStatus, Exclude<ColumnKey, 'sessions'>> = {
   draft: 'pending',
   analyzing: 'pending',
   clarifying: 'pending',
@@ -47,6 +48,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   const [composeOpen, setComposeOpen] = React.useState(false)
   const [mateEditor, setMateEditor] = React.useState<MateView | 'new' | null>(null)
   const [settingsOpen, setSettingsOpen] = React.useState(false)
+  const [showSessions, setShowSessions] = React.useState(true)
 
   const snapshot: Snapshot | null = state.snapshot
   const lang = React.useMemo(() => navigator.language.toLowerCase().startsWith('zh') ? 'zh' as const : 'en' as const, [])
@@ -75,10 +77,29 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   }, [requirements, mateFilter, projectFilter, columnFilter, query])
 
   const byColumn = React.useMemo(() => {
-    const groups: Record<ColumnKey, RequirementView[]> = { pending: [], running: [], review: [], done: [], failed: [] }
+    const groups: Record<Exclude<ColumnKey, 'sessions'>, RequirementView[]> = { pending: [], running: [], review: [], done: [], failed: [] }
     for (const requirement of filtered) groups[STATUS_COLUMN[requirement.status]].push(requirement)
     return groups
   }, [filtered])
+
+  /** Existing sessions Mate is not tracking yet, shown in their own lane. */
+  const sessionCards = React.useMemo<LiveSessionView[]>(() => {
+    if (!showSessions || snapshot === null) return []
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000
+    const needle = query.trim().toLowerCase()
+    return snapshot.liveSessions
+      .filter((session) => {
+        if (session.hidden || session.blank) return false
+        if (session.origin === 'subagent') return false
+        if (session.linkedRequirementId !== null) return false
+        if (projectFilter !== 'all' && session.cwd !== projectFilter) return false
+        if (needle.length > 0 && !`${session.title}\n${session.cwd}`.toLowerCase().includes(needle)) return false
+        return session.running || session.updatedAt >= dayAgo
+      })
+      .sort((a, b) => Number(b.running) - Number(a.running) || b.updatedAt - a.updatedAt)
+  }, [snapshot, showSessions, projectFilter, query])
+
+  const totalSessionCards = sessionCards.length
 
   const drawerRequirement = drawerId === null
     ? null
@@ -89,6 +110,22 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   const busy = (key: string): boolean => state.busy[key] === true
 
   const refresh = (): void => { void controller.refresh(true) }
+
+  const cardsFor = (key: ColumnKey): Array<
+    | { kind: 'req'; at: number; requirement: RequirementView }
+    | { kind: 'session'; at: number; session: LiveSessionView }
+  > => {
+    if (key === 'sessions') {
+      if (columnFilter !== 'all' && columnFilter !== 'sessions') return []
+      return sessionCards.map((session) => ({ kind: 'session' as const, at: session.updatedAt, session }))
+    }
+    const groups = byColumn as Record<Exclude<ColumnKey, 'sessions'>, RequirementView[]>
+    return groups[key].map((requirement) => ({
+      kind: 'req' as const,
+      at: requirement.updatedAt,
+      requirement,
+    })).sort((a, b) => b.at - a.at)
+  }
 
   return (
     <div className="mate-root">
@@ -174,6 +211,14 @@ export function MatePanel(context: PanelContext): React.ReactElement {
         {activeMate !== undefined ? (
           <span className="mate-sub">{activeMate.name} · {activeMate.model.model}</span>
         ) : null}
+        <button
+          type="button"
+          className={`mate-chip${showSessions ? ' on' : ''}`}
+          onClick={() => setShowSessions((value) => !value)}
+          title={t('toggle.showSessionsHint')}
+        >
+          {t('toggle.showSessions')}
+        </button>
       </div>
 
       <ActiveStrip context={context} />
@@ -188,7 +233,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           hint={t('empty.mates.hint')}
           action={<Button variant="primary" onClick={() => setMateEditor('new')}>{t('action.newMate')}</Button>}
         />
-      ) : requirements.length === 0 ? (
+      ) : requirements.length === 0 && totalSessionCards === 0 ? (
         <EmptyState
           title={t('empty.requirements.title')}
           hint={t('empty.requirements.hint')}
@@ -197,21 +242,41 @@ export function MatePanel(context: PanelContext): React.ReactElement {
       ) : view === 'board' ? (
         <div className="mate-board">
           {COLUMNS.map((column) => (
-            <div key={column.key} className="mate-col">
+            <div key={column.key} className={`mate-col${column.key === 'sessions' ? ' mate-col-sessions' : ''}`}>
               <div className="mate-col-head">
                 <span>{t(`column.${column.key}`)}</span>
-                <span className="mate-count">{byColumn[column.key].length}</span>
+                <span className="mate-count">{cardsFor(column.key).length}</span>
               </div>
-              {byColumn[column.key].length === 0
+              {cardsFor(column.key).length === 0
                 ? <div className="mate-empty">{t('empty.column')}</div>
-                : byColumn[column.key].map((requirement) => (
+                : cardsFor(column.key).map((card) => card.kind === 'req' ? (
                   <RequirementCard
-                    key={requirement.id}
-                    requirement={requirement}
+                    key={card.requirement.id}
+                    requirement={card.requirement}
                     t={t}
                     lang={lang}
-                    childrenCount={snapshot.requirements.filter((item) => item.parentId === requirement.id).length}
-                    onOpen={() => setDrawerId(requirement.id)}
+                    childrenCount={snapshot.requirements.filter((item) => item.parentId === card.requirement.id).length}
+                    onOpen={() => setDrawerId(card.requirement.id)}
+                  />
+                ) : (
+                  <SessionCard
+                    key={card.session.sessionId}
+                    session={card.session}
+                    t={t}
+                    lang={lang}
+                    busy={busy(`adopt:${card.session.sessionId}`) || busy(`hide:${card.session.sessionId}`)}
+                    onOpen={() => openSession(card.session.sessionId)}
+                    onAdopt={async () => {
+                      const created = await controller.run<RequirementView>(
+                        `adopt:${card.session.sessionId}`,
+                        COMMANDS.requirementAdoptSession,
+                        { sessionId: card.session.sessionId },
+                      )
+                      if (created !== null) setDrawerId(created.id)
+                    }}
+                    onHide={async () => {
+                      await controller.run(`hide:${card.session.sessionId}`, COMMANDS.sessionHide, { sessionId: card.session.sessionId })
+                    }}
                   />
                 ))}
             </div>
@@ -387,3 +452,42 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen }: {
     </button>
   )
 }
+
+/**
+ * An existing session Mate does not track yet. It is a card rather than a
+ * requirement until the user adopts it, so its actions never mutate the
+ * session itself.
+ */
+function SessionCard({ session, t, lang, busy, onOpen, onAdopt, onHide }: {
+  session: LiveSessionView
+  t: PanelContext['t']
+  lang: 'zh' | 'en'
+  busy: boolean
+  onOpen: () => void
+  onAdopt: () => void | Promise<void>
+  onHide: () => void | Promise<void>
+}): React.ReactElement {
+  return (
+    <div className="mate-card mate-card-session">
+      <button type="button" className="mate-card-open" onClick={onOpen}>
+        <span className="mate-card-title">{session.title}</span>
+        <span className="mate-card-meta">
+          <Badge tone="warn">{t('badge.untracked')}</Badge>
+          <span>{session.running ? t('status.running') : t('badge.idle')}</span>
+          <span>·</span>
+          <span>{projectLabel(session.cwd)}</span>
+          <span style={{ marginLeft: 'auto' }}>{formatRelative(session.updatedAt, lang)}</span>
+        </span>
+      </button>
+      <div className="mate-card-actions">
+        <Button onClick={onOpen}>{t('action.openSession')}</Button>
+        <Button variant="primary" busy={busy} onClick={() => { void onAdopt() }}>{t('action.adopt')}</Button>
+        <Button variant="ghost" onClick={() => { void onHide() }}>{t('action.hideSession')}</Button>
+      </div>
+    </div>
+  )
+}
+
+
+
+

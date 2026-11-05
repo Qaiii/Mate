@@ -115,13 +115,13 @@ export const STYLES = `
 .mate-board { display: flex; gap: 10px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 14px; align-items: stretch; }
 .mate-col {
   display: flex; flex-direction: column; gap: 8px;
-  flex: 1 1 0; min-width: 220px; max-width: 340px;
+  flex: 1 1 0; min-width: 188px; max-width: 340px;
   padding: 10px; border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.06));
   border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.16));
   overflow-y: auto;
 }
-.mate-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; position: sticky; top: 0; color: var(--dsw-alias-label-primary, #0f1115); }
+.mate-col-sessions { min-width: 244px; }\n.mate-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; position: sticky; top: 0; color: var(--dsw-alias-label-primary, #0f1115); }
 .mate-count { font-weight: 500; font-size: 11.5px; color: var(--dsw-alias-label-secondary, #4b5563); }
 .mate-empty { font-size: 12px; padding: 10px 4px; color: var(--dsw-alias-label-secondary, #4b5563); }
 
@@ -134,6 +134,12 @@ export const STYLES = `
   font: inherit;
 }
 .mate-card:hover { border-color: var(--dsw-alias-state-business-primary, #247bbf); }
+.mate-card-session { border-style: dashed; }
+.mate-card-open {
+  display: flex; flex-direction: column; gap: 6px; text-align: left; width: 100%;
+  border: 0; background: transparent; color: inherit; font: inherit; padding: 0; cursor: pointer;
+}
+.mate-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .mate-card-title { font-size: 13px; font-weight: 600; line-height: 1.42; }
 .mate-card-meta, .mate-card-foot { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; align-items: center; color: var(--dsw-alias-label-secondary, #4b5563); }
 
@@ -331,5 +337,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
+
 
 

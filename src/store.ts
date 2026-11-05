@@ -18,6 +18,10 @@ export interface LiveSessionInfo {
   running: boolean
   pendingInput: string[]
   updatedAt: number
+  blank: boolean
+  origin: 'subagent' | null
+  linkedRequirementId: string | null
+  hidden: boolean
 }
 
 /** Everything the snapshot needs from outside the store. */
@@ -143,6 +147,20 @@ export class MateStore {
     return [...this.domain.table('projects').entries()].map(([, value]) => value)
   }
 
+  hiddenSessionIds(): Set<string> {
+    return new Set([...this.domain.table('hidden_sessions').entries()].map(([key]) => key))
+  }
+
+  async hideSession(sessionId: string): Promise<void> {
+    await this.domain.table('hidden_sessions').put(sessionId, { sessionId, hiddenAt: Date.now() })
+    this.bumpRevision()
+  }
+
+  async unhideSession(sessionId: string): Promise<void> {
+    const removed = await this.domain.table('hidden_sessions').delete(sessionId)
+    if (removed) this.bumpRevision()
+  }
+
   async buildSnapshot(source: SnapshotSource): Promise<Snapshot> {
     const live = await source.listLive()
     const settings = this.settings()
@@ -216,3 +234,4 @@ export class MateStore {
     return segment && segment.length > 0 ? segment : path
   }
 }
+
