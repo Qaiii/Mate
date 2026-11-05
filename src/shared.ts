@@ -150,10 +150,16 @@ export interface LiveSessionView {
   updatedAt: number
 }
 
+/** Client-visible plugin release, kept in step with package.json by hand. */
+export const PLUGIN_VERSION = '0.1.0'
+
 export interface SettingsView {
   defaultMateId: string | null
   pollMs: number
   reuseIdleSession: boolean
+  version: string
+  /** Host-half start time of the process serving this snapshot. */
+  lastStartedAt: number | null
   modelCatalog: Array<{ provider: string; name: string; models: Array<{ id: string; name: string }> }>
 }
 

@@ -59,6 +59,12 @@ draft → analyzing → proposed ──confirm──→ approved → running →
               └→ failed(异常)                                   cancelled(异常)
 ```
 
+## 自检与诊断
+
+- 面板渲染出错时显示错误信息与「重试」，不会整块空白；错误同时打印到浏览器控制台（`[dsh-mate] panel crashed`）。
+- **设置**弹窗显示插件版本、Host 启动时间（`lastStartedAt`）、可见会话数与 Mate 数，并提供「测试连接」按钮。桌面版重启后若「Host 启动时间」仍停在旧值，说明 Host 半没有重新加载。
+- Host 半初始化失败会打印 `[dsh-mate] initialization failed: …`，同时面板会显示 `starting` 错误。
+
 ## 已知限制
 
 - 派发完成判定基于 `api-session/status` + 15s 对账（`state.pendingInput`），不是精确 turn 边界；刚派发的 20s 内不判定完成。

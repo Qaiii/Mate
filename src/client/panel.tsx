@@ -288,6 +288,16 @@ export function MatePanel(context: PanelContext): React.ReactElement {
             const saved = await controller.run('settings.update', COMMANDS.settingsUpdate, payload)
             if (saved !== null) setSettingsOpen(false)
           }}
+          onTest={async () => {
+            await controller.refresh(true)
+            const current = controller.getSnapshot()
+            controller.notify(
+              current.error === null ? 'ok' : 'error',
+              current.error === null
+                ? `${t('action.testConnection')}: OK (${current.snapshot?.liveSessions.length ?? 0} sessions, rev ${current.rev})`
+                : current.error,
+            )
+          }}
         />
       ) : null}
 

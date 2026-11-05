@@ -40,10 +40,61 @@ interface PanelFace {
   openSession: (sessionId: string) => void
 }
 
+interface BoundaryProps {
+  t: Translator
+  children: React.ReactNode
+}
+
+interface BoundaryState {
+  error: Error | null
+}
+
+/**
+ * Keeps one failing render from blanking the whole slot: the user sees the
+ * rule it broke and can retry, and the Host half keeps running.
+ */
+class PanelErrorBoundary extends React.Component<BoundaryProps, BoundaryState> {
+  constructor(props: BoundaryProps) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error: Error): BoundaryState {
+    return { error }
+  }
+
+  override componentDidCatch(error: Error): void {
+    console.error('[dsh-mate] panel crashed', error)
+  }
+
+  override render(): React.ReactNode {
+    if (this.state.error === null) return this.props.children
+    return (
+      <div className="mate-root">
+        <div className="mate-panel mate-error-line" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <strong>{this.props.t('error.panelCrashed')}</strong>
+          <span className="mate-mono" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {this.state.error.message}
+          </span>
+          <div>
+            <button type="button" className="mate-btn" onClick={() => this.setState({ error: null })}>
+              {this.props.t('action.retry')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+}
+
 /** Adapter that binds the React-free controller to the render pass. */
 function MatePanelView(face: PanelFace): React.ReactElement {
   const state: MateState = React.useSyncExternalStore(face.controller.subscribe, face.controller.getSnapshot)
-  return <MatePanel state={state} controller={face.controller} t={face.t} openSession={face.openSession} />
+  return (
+    <PanelErrorBoundary t={face.t}>
+      <MatePanel state={state} controller={face.controller} t={face.t} openSession={face.openSession} />
+    </PanelErrorBoundary>
+  )
 }
 
 /**

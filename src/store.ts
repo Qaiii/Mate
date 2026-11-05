@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import type { MateDomain, MateGlobalRecord, ProjectRecord } from './domain.js'
+import { PLUGIN_VERSION } from './shared.js'
 import type {
   MateView,
   ProjectView,
@@ -197,6 +198,8 @@ export class MateStore {
         defaultMateId: settings.defaultMateId,
         pollMs: settings.pollMs,
         reuseIdleSession: settings.reuseIdleSession,
+        version: PLUGIN_VERSION,
+        lastStartedAt: settings.lastStartedAt ?? null,
         modelCatalog: source.modelCatalog(),
       },
       serverTime: Date.now(),

@@ -95,6 +95,7 @@ export function apply(ctx: Context): void {
           const analyzer = llm ? new MateAnalyzer(llm as unknown as ConstructorParameters<typeof MateAnalyzer>[0]) : null
           const app = new MateApp({ store, controller, analyzer, transcript: null, log })
           await app.refreshModelCatalog()
+          await app.markStarted()
           if (cancelled) return
           state.app = app
 

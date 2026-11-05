@@ -314,15 +314,17 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   )
 }
 
-export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit }: {
+export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest }: {
   snapshot: Snapshot
   t: Translator
   busy: boolean
   onClose: () => void
   onSubmit: (payload: { defaultMateId: string | null; pollMs: number }) => void | Promise<void>
+  onTest: () => void | Promise<void>
 }): React.ReactElement {
   const [defaultMateId, setDefaultMateId] = React.useState(snapshot.settings.defaultMateId ?? '')
   const [pollMs, setPollMs] = React.useState(String(snapshot.settings.pollMs))
+  const started = snapshot.settings.lastStartedAt
   return (
     <Modal
       title={t('settings.title')}
@@ -352,6 +354,28 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit }: {
       <Field label={t('settings.pollMs')}>
         <input className="mate-input" type="number" min="1000" max="30000" step="500" value={pollMs} onChange={(event) => setPollMs(event.target.value)} />
       </Field>
+      <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="mate-kv">
+          <span>{t('settings.version')}</span>
+          <span className="mate-mono">v{snapshot.settings.version}</span>
+        </div>
+        <div className="mate-kv">
+          <span>{t('settings.startedAt')}</span>
+          <span className="mate-mono">
+            {started === null || started <= 0 ? '—' : new Date(started).toLocaleString()}
+          </span>
+        </div>
+        <div className="mate-kv">
+          <span>{t('settings.sessionCount')}</span>
+          <span className="mate-mono">{snapshot.liveSessions.length}</span>
+          <span>·</span>
+          <span>{t('settings.mateCount')}</span>
+          <span className="mate-mono">{snapshot.mates.length}</span>
+        </div>
+        <div>
+          <Button onClick={() => { void onTest() }}>{t('action.testConnection')}</Button>
+        </div>
+      </div>
     </Modal>
   )
 }

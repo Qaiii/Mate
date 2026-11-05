@@ -4,6 +4,7 @@ import { newMateId, newRequirementId, type MateStore } from './store.js'
 import {
   COMMANDS,
   isTerminal,
+  PLUGIN_VERSION,
   type AnalysisView,
   type AutonomyMode,
   type CommandRequest,
@@ -55,6 +56,14 @@ export class MateApp {
 
   setTranscriptReader(reader: ((sessionId: string) => Promise<string>) | null): void {
     this.deps.transcript = reader
+  }
+
+  /**
+   * Record this Host process's start time. Useful in the settings dialog to
+   * tell "the panel is polling a stale host" from "the plugin never loaded".
+   */
+  async markStarted(): Promise<void> {
+    await this.deps.store.updateSettings({ lastStartedAt: Date.now() })
   }
 
   async snapshot(rev?: number): Promise<{ unchanged: boolean; rev: number; snapshot?: Snapshot }> {
@@ -464,10 +473,13 @@ export class MateApp {
     if (args.pollMs !== undefined) patch.pollMs = Math.round(clampNumber(args.pollMs, 1000, 30000, 2500))
     if (args.reuseIdleSession !== undefined) patch.reuseIdleSession = args.reuseIdleSession === true
     await this.deps.store.updateSettings(patch)
+    const settings = this.deps.store.settings()
     return {
-      defaultMateId: this.deps.store.settings().defaultMateId,
-      pollMs: this.deps.store.settings().pollMs,
-      reuseIdleSession: this.deps.store.settings().reuseIdleSession,
+      defaultMateId: settings.defaultMateId,
+      pollMs: settings.pollMs,
+      reuseIdleSession: settings.reuseIdleSession,
+      version: PLUGIN_VERSION,
+      lastStartedAt: settings.lastStartedAt ?? null,
       modelCatalog: this.cachedCatalog,
     }
   }

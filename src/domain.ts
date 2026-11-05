@@ -27,6 +27,8 @@ export interface MateGlobalRecord {
   defaultMateId: string | null
   pollMs: number
   reuseIdleSession: boolean
+  /** Diagnostics: when the Host half last initialized. */
+  lastStartedAt?: number
 }
 
 const ModelSelectionSchema: z.ZodType<ModelSelection> = z.object({
@@ -159,6 +161,7 @@ const GlobalSchema: z.ZodType<MateGlobalRecord> = z.object({
   defaultMateId: z.string().nullable(),
   pollMs: z.number(),
   reuseIdleSession: z.boolean(),
+  lastStartedAt: z.number().optional(),
 })
 
 /** Storage domain declaration: one unit file under `$DSH_HOME/storages/mate.json`. */

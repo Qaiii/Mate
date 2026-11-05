@@ -117,9 +117,16 @@ const ZH: Record<string, string> = {
   'settings.title': 'Mate 设置',
   'settings.defaultMate': '默认 Mate',
   'settings.pollMs': '刷新间隔（毫秒）',
+  'settings.version': '插件版本',
+  'settings.startedAt': 'Host 启动时间',
+  'settings.sessionCount': '可见会话',
+  'settings.mateCount': 'Mate 数',
+  'action.testConnection': '测试连接',
   'notice.copied': '已复制',
   'error.loadFailed': '无法连接 Mate 主进程：{message}',
   'error.starting': 'Mate 正在启动，请稍候…',
+  'error.panelCrashed': 'Mate 面板渲染出错',
+  'action.retry': '重试',
 }
 
 const EN: Record<string, string> = {
@@ -239,9 +246,16 @@ const EN: Record<string, string> = {
   'settings.title': 'Mate settings',
   'settings.defaultMate': 'Default Mate',
   'settings.pollMs': 'Refresh interval (ms)',
+  'settings.version': 'Plugin version',
+  'settings.startedAt': 'Host started at',
+  'settings.sessionCount': 'Visible sessions',
+  'settings.mateCount': 'Mates',
+  'action.testConnection': 'Test connection',
   'notice.copied': 'Copied',
   'error.loadFailed': 'Cannot reach the Mate host half: {message}',
   'error.starting': 'Mate is starting, please wait…',
+  'error.panelCrashed': 'The Mate panel failed to render',
+  'action.retry': 'Retry',
 }
 
 export function resolveLanguage(): Lang {
