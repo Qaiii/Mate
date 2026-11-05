@@ -1,0 +1,5 @@
+# Mate bundle layer: one Host row. The web app loads this package's `./client`
+# bundle as the browser half because package.json declares `dsh.client`.
+- insert:
+    - id: dsh-mate
+      name: dsh-mate
