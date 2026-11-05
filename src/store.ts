@@ -167,17 +167,19 @@ export class MateStore {
       row.lastActiveAt = Math.max(row.lastActiveAt, session.updatedAt)
       byPath.set(session.cwd, row)
     }
+    // Only projects that are live, or still referenced by a requirement, reach
+    // the filter. Stored rows are a cache and can outlive their sessions.
+    const requirementPaths = new Set(this.listRequirements().map((item) => item.projectPath))
     for (const project of this.storedProjects()) {
-      if (!byPath.has(project.path)) {
-        byPath.set(project.path, {
-          path: project.path,
-          title: project.title,
-          sessionCount: 0,
-          running: 0,
-          awaitingInput: 0,
-          lastActiveAt: project.lastSeenAt,
-        })
-      }
+      if (byPath.has(project.path) || !requirementPaths.has(project.path)) continue
+      byPath.set(project.path, {
+        path: project.path,
+        title: project.title,
+        sessionCount: 0,
+        running: 0,
+        awaitingInput: 0,
+        lastActiveAt: project.lastSeenAt,
+      })
     }
     for (const item of remember) {
       if (this.domain.table('projects').get(item.path) === undefined) {
