@@ -42,7 +42,8 @@ export const STYLES = `
   transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 .mate-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)); }
-.mate-btn:disabled {
+.mate-btn:disabled,
+.mate-btn.is-inactive {
   cursor: default;
   opacity: 1;
   color: var(--dsw-alias-label-secondary, #4b5563);
@@ -60,7 +61,8 @@ export const STYLES = `
   font-weight: 600;
 }
 .mate-btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
-.mate-btn.primary:disabled {
+.mate-btn.primary:disabled,
+.mate-btn.primary.is-inactive {
   background: var(--dsw-alias-button-primary-dimmed, #e9ecf2);
   color: var(--dsw-alias-label-secondary, #4b5563);
   border-color: transparent;
@@ -165,6 +167,25 @@ export const STYLES = `
 .mate-row-session { border-style: dashed; }
 .mate-card-title { font-size: 13px; font-weight: 600; line-height: 1.42; }
 .mate-card-meta, .mate-card-foot { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; align-items: center; color: var(--dsw-alias-label-secondary, #4b5563); }
+
+/* Last word on inactive buttons: class-based, hover-proof, order-independent. */
+.mate-btn.is-inactive,
+.mate-btn.is-inactive:hover,
+.mate-btn.primary.is-inactive,
+.mate-btn.primary.is-inactive:hover {
+  opacity: 1;
+  filter: none;
+  cursor: not-allowed;
+  background-color: var(--dsw-alias-bg-layer-1, #eef0f2);
+  color: var(--dsw-alias-label-secondary, #4b5563);
+  border-color: var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.3));
+}
+
+.mate-btn.primary.is-inactive,
+.mate-btn.primary.is-inactive:hover {
+  background-color: var(--dsw-alias-button-primary-dimmed, #e9ecf2);
+  color: var(--dsw-alias-label-secondary, #4b5563);
+}
 
 .mate-badge {
   display: inline-flex; align-items: center; gap: 5px;
@@ -319,7 +340,8 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 export function Button({ variant = 'default', busy = false, disabled, children, ...rest }: ButtonProps): React.ReactElement {
-  const className = ['mate-btn', variant === 'default' ? '' : variant, rest.className ?? ''].filter(Boolean).join(' ')
+  const inactive = disabled === true || busy
+  const className = ['mate-btn', variant === 'default' ? '' : variant, inactive ? 'is-inactive' : '', rest.className ?? ''].filter(Boolean).join(' ')
   return (
     <button {...rest} className={className} disabled={disabled === true || busy}>
       {busy ? <Spinner /> : null}
@@ -397,6 +419,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 
