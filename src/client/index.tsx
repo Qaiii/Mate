@@ -8,7 +8,7 @@ import type { MateState } from './controller.js'
 export const name = 'dsh-mate'
 
 /** Runtime services this browser half waits for. */
-export const inject = ['slots']
+export const inject = ['slots', 'uiWorkspace']
 
 /** Shared identity of the main panel and its sidebar entry. */
 const PANEL_ID = 'mate'
@@ -146,3 +146,4 @@ export function apply(ctx: ClientContext): void {
     label: () => 'Mate',
   }, MateIcon))
 }
+
