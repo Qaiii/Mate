@@ -240,7 +240,8 @@ export const STYLES = `
 .mate-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mate-dialog-head h2 { margin: 0; font-size: 15.5px; font-weight: 650; color: var(--dsw-alias-label-primary, #0f1115); }
 .mate-dialog-body { display: flex; flex-direction: column; gap: 12px; }
-.mate-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.mate-dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.mate-foot-hint { line-height: 1.4; white-space: nowrap; }
 .mate-field { display: flex; flex-direction: column; gap: 5px; }
 .mate-field > label { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary, #4b5563); }
 .mate-field .hint { font-size: 11px; color: var(--dsw-alias-label-secondary, #4b5563); }

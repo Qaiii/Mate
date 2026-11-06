@@ -100,7 +100,7 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
               ))}
             </select>
           ) : null}
-          <span className="mate-sub">{t('compose.hint')}</span>
+          <span className="mate-sub mate-foot-hint">{t('compose.hint')}</span>
           <Button onClick={onClose}>{t('action.cancel')}</Button>
           <Button variant="primary" busy={busy} disabled={!canSend} onClick={send}>
             {t('action.send')}
@@ -607,6 +607,7 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
 
 
 
