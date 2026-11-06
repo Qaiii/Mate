@@ -551,9 +551,11 @@ export class MateApp {
       const title = analysis.title !== undefined && analysis.title.length > 0
         ? analysis.title.slice(0, 80)
         : requirement.title
+      const priority = analysis.priority ?? requirement.priority
       await this.deps.store.mutateRequirement(id, (current) => ({
         ...current,
         title,
+        priority,
         analysis,
         status,
         discussion,
@@ -925,3 +927,4 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+

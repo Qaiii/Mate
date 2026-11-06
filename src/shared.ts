@@ -59,6 +59,8 @@ export interface AnalysisView {
   title?: string
   /** Model the Mate picked for the implementing session, or null for default. */
   sessionModel?: ModelSelection | null
+  /** Priority the Mate judged from the request itself. */
+  priority?: Priority
   summary: string
   confidence: number
   needsClarification: boolean
@@ -256,3 +258,4 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+

@@ -69,7 +69,8 @@ const ANALYSIS_CONTRACT = `Return ONE JSON object and nothing else, with this ex
   "risks": ["..."],
   "splitSuggestion": [{ "title": "...", "brief": "...", "acceptance": "..." }],
   "suggestedProjectPath": null,
-  "sessionModel": { "provider": "...", "model": "..." }
+  "sessionModel": { "provider": "...", "model": "..." },
+  "priority": "normal"
 }
 Rules:
 - "title" is a concise label (at most 40 characters) you would put on a card; never repeat the whole request.
@@ -79,6 +80,7 @@ Rules:
 - "splitSuggestion" is non-empty ONLY when the requirement is too large for one session; give 2-6 independent child requirements that could each be dispatched separately. You own this decision; the user does not configure it.
 - "suggestedProjectPath" must be one of the listed project paths, or null.
 - "sessionModel" is the model the implementing session should use, picked from the listed models, or null to keep the default. The user did not choose it; you decide.
+- "priority" is "low", "normal" or "high", judged from the request and its urgency; the user does not set it.
 - Never wrap the JSON in markdown fences.`
 
 const SUMMARY_CONTRACT = `Return ONE JSON object and nothing else, with this exact shape:
@@ -192,10 +194,12 @@ export function normalizeAnalysis(raw: Record<string, unknown>, provider?: strin
     })()
     : null
   const title = asString(raw.title).trim()
+  const priority = raw.priority === 'low' || raw.priority === 'high' ? raw.priority : undefined
   return {
     provider,
     model,
     ...(title.length > 0 ? { title: title.slice(0, 80) } : {}),
+    ...(priority === undefined ? {} : { priority }),
     sessionModel,
     summary: asString(raw.summary, '(no summary)'),
     confidence: asConfidence(raw.confidence),
@@ -397,4 +401,5 @@ function parseOrThrow(text: string): Record<string, unknown> | null {
     return null
   }
 }
+
 

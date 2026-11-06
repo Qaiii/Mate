@@ -100,6 +100,18 @@ describe('normalizeAnalysis', () => {
     expect(value.needsClarification).toBe(true)
     expect(value.questions).toEqual(['Which project?'])
   })
+
+  it('keeps the title and priority the Mate judged', () => {
+    const value = normalizeAnalysis({ title: '  卡片空态  ', priority: 'high' })
+    expect(value.title).toBe('卡片空态')
+    expect(value.priority).toBe('high')
+  })
+
+  it('drops an unknown priority and an incomplete session model', () => {
+    const value = normalizeAnalysis({ priority: 'urgent', sessionModel: { provider: 'p' } })
+    expect(value.priority).toBeUndefined()
+    expect(value.sessionModel).toBeNull()
+  })
 })
 
 describe('normalizeResult', () => {

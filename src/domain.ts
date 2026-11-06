@@ -72,6 +72,7 @@ const AnalysisSchema: z.ZodType<AnalysisView> = z.object({
   model: z.string().optional(),
   title: z.string().optional(),
   sessionModel: ModelSelectionSchema.nullable().optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
   summary: z.string(),
   confidence: z.number(),
   needsClarification: z.boolean(),
@@ -191,4 +192,5 @@ export const mateDomain = defineDomain({
 })
 
 export type MateDomain = typeof mateDomain
+
 
