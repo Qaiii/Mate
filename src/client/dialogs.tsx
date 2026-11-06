@@ -13,7 +13,6 @@ export interface ComposePayload {
   projectTitle?: string
 }
 
-type ProjectMode = 'auto' | 'user' | 'user-new'
 
 /**
  * One input is enough for the body: the Mate names the card. The project is a
@@ -30,20 +29,16 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
 }): React.ReactElement {
   const mates = snapshot.mates.filter((mate) => !mate.archived)
   const projects = snapshot.projects
-  const lastProjectPath = snapshot.settings.lastProjectPath
-  const lastValid = lastProjectPath !== null && lastProjectPath.length > 0
-    && projects.some((project) => project.path === lastProjectPath)
-    ? lastProjectPath
-    : null
 
   const [brief, setBrief] = React.useState('')
   const [mateId, setMateId] = React.useState(snapshot.settings.defaultMateId ?? mates[0]?.id ?? '')
-  const [mode, setMode] = React.useState<ProjectMode>('auto')
-  const [source, setSource] = React.useState<ProjectSource>('auto')
-  const [selectedPath, setSelectedPath] = React.useState('')
+  // One select holds every project target: auto, each known project, then the
+  // new-project entry at the end.
+  const [choice, setChoice] = React.useState('auto')
   const [newPath, setNewPath] = React.useState('')
   const [registerBusy, setRegisterBusy] = React.useState(false)
   const [hint, setHint] = React.useState<string | null>(null)
+  const NEW_PROJECT = '__new__'
   const areaRef = React.useRef<HTMLTextAreaElement | null>(null)
 
   React.useEffect(() => {
@@ -51,20 +46,6 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
   }, [])
 
   const canSend = brief.trim().length > 0 && mateId.length > 0 && !busy
-
-  const enterUserMode = (): void => {
-    if (lastProjectPath !== null && lastProjectPath.length > 0 && lastValid === null) {
-      // The remembered project is no longer in the list: fall back to auto.
-      setMode('auto')
-      setSource('auto')
-      setHint(t('compose.projectLastGone'))
-      return
-    }
-    setMode('user')
-    setSource('user')
-    setHint(null)
-    setSelectedPath((current) => current.length > 0 ? current : (lastValid ?? projects[0]?.path ?? ''))
-  }
 
   const registerManual = async (): Promise<void> => {
     const path = newPath.trim()
@@ -74,9 +55,7 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
     try {
       const result = await controller.run<{ path: string; title: string }>('project.register', COMMANDS.projectRegister, { path })
       if (result !== null) {
-        setSelectedPath(result.path)
-        setSource('user-new')
-        setMode('user')
+        setChoice(result.path)
         setNewPath('')
         setHint(t('compose.projectRegistered'))
       } else {
@@ -92,14 +71,12 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
     let projectSource: ProjectSource = 'auto'
     let projectPath = ''
     let projectTitle: string | undefined
-    if (mode === 'user' && selectedPath.length > 0) {
-      projectSource = source
-      projectPath = selectedPath
-      projectTitle = projects.find((project) => project.path === selectedPath)?.title
-    } else if (mode !== 'auto') {
-      // New-project mode with no directory chosen (or user mode with an empty
-      // list): degrade to auto and say so.
+    if (choice === NEW_PROJECT) {
       setHint(t('compose.projectFallbackAuto'))
+    } else if (choice !== 'auto') {
+      projectSource = 'user'
+      projectPath = choice
+      projectTitle = projects.find((project) => project.path === choice)?.title
     }
     void onSubmit({ brief: brief.trim(), mateId, projectSource, projectPath, projectTitle })
   }
@@ -146,64 +123,39 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
         }}
       />
 
-      <Field label={t('compose.projectMode')} hint={t('compose.projectModeHint')}>
-        <div className="mate-seg" role="radiogroup" aria-label={t('compose.projectMode')}>
-          <button
-            type="button"
-            className={mode === 'auto' ? 'on' : ''}
-            onClick={() => { setMode('auto'); setSource('auto'); setHint(null) }}
-          >
-            {t('compose.projectAuto')}
-          </button>
-          <button type="button" className={mode === 'user' ? 'on' : ''} onClick={enterUserMode}>
-            {t('compose.projectList')}
-          </button>
-          <button
-            type="button"
-            className={mode === 'user-new' ? 'on' : ''}
-            onClick={() => { setMode('user-new'); setSource('user-new'); setHint(null) }}
-          >
-            {t('compose.projectNew')}
-          </button>
-        </div>
-      </Field>
-
-      {mode === 'auto' ? (
-        <div className="mate-sub">{t('compose.projectAutoHint')}</div>
-      ) : null}
-
-      {mode === 'user' ? (
-        <Field label={t('compose.project')} hint={t('compose.projectListHint')}>
+      <Field
+        label={t('compose.project')}
+        hint={choice === 'auto' ? t('compose.projectModeHint') : choice === NEW_PROJECT ? t('compose.projectNewHint') : t('compose.projectListHint')}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <select
             className="mate-select"
-            value={selectedPath}
-            onChange={(event) => { setSelectedPath(event.target.value); setSource('user') }}
+            value={choice}
+            onChange={(event) => { setChoice(event.target.value); setHint(null) }}
+            aria-label={t('compose.project')}
           >
+            <option value="auto">{t('compose.projectAuto')}</option>
             {projects.map((project) => (
               <option key={project.path} value={project.path}>{projectLabel(project.path)} — {project.path}</option>
             ))}
-            {selectedPath.length > 0 && projects.every((project) => project.path !== selectedPath) ? (
-              <option value={selectedPath}>{selectedPath}</option>
-            ) : null}
+            <option value={NEW_PROJECT}>＋ {t('compose.projectNew')}</option>
           </select>
-        </Field>
-      ) : null}
 
-      {mode === 'user-new' ? (
-        <Field label={t('compose.projectNew')} hint={t('compose.projectNewHint')}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              className="mate-input"
-              value={newPath}
-              placeholder={t('compose.projectPathPlaceholder')}
-              onChange={(event) => setNewPath(event.target.value)}
-            />
-            <Button busy={registerBusy} disabled={newPath.trim().length === 0} onClick={() => { void registerManual() }}>
-              {t('compose.projectNewRegister')}
-            </Button>
-          </div>
-        </Field>
-      ) : null}
+          {choice === NEW_PROJECT ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                className="mate-input"
+                value={newPath}
+                placeholder={t('compose.projectPathPlaceholder')}
+                onChange={(event) => setNewPath(event.target.value)}
+              />
+              <Button busy={registerBusy} disabled={newPath.trim().length === 0} onClick={() => { void registerManual() }}>
+                {t('compose.projectNewRegister')}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </Field>
 
       {hint !== null ? (
         <div className="mate-sub" style={{ color: 'var(--dsw-alias-state-warn-label, #dd8629)' }}>{hint}</div>
@@ -655,6 +607,7 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
 
 
 
