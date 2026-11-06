@@ -60,7 +60,15 @@ export const STYLES = `
   color: var(--dsw-alias-label-primary-foreground, #ffffff);
   font-weight: 600;
 }
-.mate-btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+/* The generic .mate-btn:hover rule would repaint the filled primary button
+   with the light hover surface while its label stays white; restate the filled
+   colours here so hover keeps its contrast. */
+.mate-btn.primary:hover:not(:disabled),
+.mate-btn.primary:active:not(:disabled) {
+  background-color: var(--dsw-alias-button-primary-fill, #0f1115);
+  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  filter: brightness(1.08);
+}
 .mate-btn.primary:disabled,
 .mate-btn.primary.is-inactive {
   background: var(--dsw-alias-button-primary-dimmed, #e9ecf2);
