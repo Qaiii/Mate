@@ -75,6 +75,7 @@ const ZH: Record<string, string> = {
   'session.you': '我',
   'session.assistant': '助手',
   'session.loadFailed': '加载会话失败',
+  'session.hostStale': '桌面版 Host 半没有加载这个命令（页面刷新不够）。请完全退出 DeepSeek Harness 再重开。',
   'compose.name': '标题',
   'compose.brief': '需求描述',
   'compose.briefHint': '几句话即可；Mate 会分析并决定怎么拆分、派给谁。',
@@ -229,6 +230,7 @@ const EN: Record<string, string> = {
   'session.you': 'Me',
   'session.assistant': 'Assistant',
   'session.loadFailed': 'Failed to load the session',
+  'session.hostStale': 'The desktop Host half does not have this command yet (a page refresh is not enough). Quit DeepSeek Harness completely and reopen it.',
   'compose.name': 'Title',
   'compose.brief': 'Description',
   'compose.briefHint': 'A few sentences is enough; Mate decides how to split and dispatch it.',
@@ -323,6 +325,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

@@ -22,18 +22,26 @@ export function SessionDrawer({ sessionId, controller, t, lang, onClose, openSes
   const [data, setData] = React.useState<SessionTranscriptView | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const [attempt, setAttempt] = React.useState(0)
 
   React.useEffect(() => {
     let cancelled = false
+    setError(null)
+    setData(null)
     void controller
       .run<SessionTranscriptView>(`transcript:${sessionId}`, COMMANDS.sessionTranscript, { sessionId })
       .then((value) => {
         if (cancelled) return
-        if (value === null) setError(t('session.loadFailed'))
-        else setData(value)
+        if (value === null) {
+          // `run` records the Host's message in the notice; surface it so a
+          // stale Host half is diagnosable instead of a generic failure.
+          setError(controller.getSnapshot().notice?.text ?? t('session.loadFailed'))
+        } else {
+          setData(value)
+        }
       })
     return () => { cancelled = true }
-  }, [controller, sessionId, t])
+  }, [controller, sessionId, t, attempt])
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose() }
@@ -93,7 +101,16 @@ export function SessionDrawer({ sessionId, controller, t, lang, onClose, openSes
         <section className="mate-section">
           <h3>{t('session.preview')}</h3>
           {error !== null ? (
-            <div className="mate-panel mate-error-line">{error}</div>
+            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="mate-error-line">{t('session.loadFailed')}</div>
+              <div className="mate-prose mate-mono" style={{ fontSize: 11.5 }}>{error}</div>
+              {/unknown command|unknown-command/i.test(error) ? (
+                <div className="mate-prose">{t('session.hostStale')}</div>
+              ) : null}
+              <div>
+                <Button onClick={() => setAttempt((value) => value + 1)}>{t('action.retry')}</Button>
+              </div>
+            </div>
           ) : data === null ? (
             <div className="mate-panel" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> {t('session.loading')}</div>
           ) : data.unavailable !== undefined ? (
