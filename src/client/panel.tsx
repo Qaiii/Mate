@@ -193,29 +193,50 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           <button type="button" className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}>{t('view.board')}</button>
           <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>{t('view.list')}</button>
         </div>
-        <div className="mate-filters" style={{ flex: 1 }}>
-          {view === 'list' ? (
-            <select
-              className="mate-select"
-              value={columnFilter}
-              onChange={(event) => setColumnFilter(event.target.value as 'all' | ColumnKey)}
+        <div className="mate-projecttabs" role="tablist" aria-label={t('compose.project')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={projectFilter === 'all'}
+            className={`mate-projecttab${projectFilter === 'all' ? ' on' : ''}`}
+            onClick={() => setProjectFilter('all')}
+          >
+            {t('filter.allProjects')}
+          </button>
+          {projects.map((project) => (
+            <button
+              key={project.path}
+              type="button"
+              role="tab"
+              aria-selected={projectFilter === project.path}
+              className={`mate-projecttab${projectFilter === project.path ? ' on' : ''}`}
+              title={project.path}
+              onClick={() => setProjectFilter(project.path)}
             >
-              <option value="all">{t('filter.allStatus')}</option>
-              {COLUMNS.map((column) => (
-                <option key={column.key} value={column.key}>{t(`column.${column.key}`)}</option>
-              ))}
-            </select>
-          ) : null}
-          <input
-            className="mate-input"
-            value={query}
-            placeholder={t('filter.search')}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+              {projectLabel(project.path)}
+              {project.running > 0 ? <span className="mate-dot" style={{ marginLeft: 5 }} /> : null}
+            </button>
+          ))}
         </div>
-        {activeMate !== undefined ? (
-          <span className="mate-sub">{activeMate.name} · {activeMate.model.model}</span>
+        {view === 'list' ? (
+          <select
+            className="mate-select"
+            style={{ width: 'auto' }}
+            value={columnFilter}
+            onChange={(event) => setColumnFilter(event.target.value as 'all' | ColumnKey)}
+          >
+            <option value="all">{t('filter.allStatus')}</option>
+            {COLUMNS.map((column) => (
+              <option key={column.key} value={column.key}>{t(`column.${column.key}`)}</option>
+            ))}
+          </select>
         ) : null}
+        <input
+          className="mate-input mate-search"
+          value={query}
+          placeholder={t('filter.search')}
+          onChange={(event) => setQuery(event.target.value)}
+        />
         <button
           type="button"
           className={`mate-chip${showSessions ? ' on' : ''}`}
@@ -224,32 +245,6 @@ export function MatePanel(context: PanelContext): React.ReactElement {
         >
           {t('toggle.showSessions')}
         </button>
-      </div>
-
-      <div className="mate-projecttabs" role="tablist" aria-label={t('compose.project')}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={projectFilter === 'all'}
-          className={`mate-projecttab${projectFilter === 'all' ? ' on' : ''}`}
-          onClick={() => setProjectFilter('all')}
-        >
-          {t('filter.allProjects')}
-        </button>
-        {projects.map((project) => (
-          <button
-            key={project.path}
-            type="button"
-            role="tab"
-            aria-selected={projectFilter === project.path}
-            className={`mate-projecttab${projectFilter === project.path ? ' on' : ''}`}
-            title={project.path}
-            onClick={() => setProjectFilter(project.path)}
-          >
-            {projectLabel(project.path)}
-            {project.running > 0 ? <span className="mate-dot" style={{ marginLeft: 5 }} /> : null}
-          </button>
-        ))}
       </div>
 
       <ActiveStrip context={context} />

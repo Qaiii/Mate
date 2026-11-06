@@ -70,7 +70,7 @@ export const STYLES = `
 .mate-btn.ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)); }
 .mate-btn:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #247bbf); outline-offset: 1px; }
 
-.mate-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: none; }
+.mate-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; flex: none; min-width: 0; }
 .mate-seg { display: inline-flex; border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3)); border-radius: 9px; overflow: hidden; }
 .mate-seg button {
   border: 0; background: transparent; font: inherit; font-size: 12.5px; cursor: pointer;
@@ -107,7 +107,8 @@ export const STYLES = `
 }
 .mate-textarea { resize: vertical; min-height: 84px; line-height: 1.55; }
 .mate-select { cursor: pointer; }
-.mate-projecttabs { display: flex; gap: 6px; overflow-x: auto; flex: none; padding-bottom: 2px; }
+.mate-projecttabs { display: flex; gap: 6px; overflow-x: auto; flex: 1 1 auto; min-width: 0; padding-bottom: 2px; scrollbar-width: none; }
+.mate-projecttabs::-webkit-scrollbar { display: none; }
 .mate-projecttab {
   display: inline-flex; align-items: center; gap: 4px; flex: none;
   padding: 5px 12px; border-radius: 999px; cursor: pointer;
@@ -124,6 +125,7 @@ export const STYLES = `
 .mate-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex: none; }
 .mate-filters .mate-select { width: auto; min-width: 130px; }
 .mate-filters .mate-input { width: 220px; }
+.mate-search { width: 208px; flex: none; }
 
 .mate-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; flex: none; }
 .mate-strip-item {
@@ -371,6 +373,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 
