@@ -2,6 +2,7 @@ import React from 'react'
 import { COMMANDS, type LiveSessionView, type MateView, type RequirementStatus, type RequirementView, type Snapshot } from '../shared.js'
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
+import { SessionDrawer } from './sessionDrawer.js'
 import { formatRelative, projectLabel, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
 
@@ -44,6 +45,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   const [columnFilter, setColumnFilter] = React.useState<'all' | ColumnKey>('all')
   const [query, setQuery] = React.useState('')
   const [drawerId, setDrawerId] = React.useState<string | null>(null)
+  const [sessionDrawerId, setSessionDrawerId] = React.useState<string | null>(null)
   const [composeOpen, setComposeOpen] = React.useState(false)
   const [mateEditor, setMateEditor] = React.useState<MateView | 'new' | null>(null)
   const [settingsOpen, setSettingsOpen] = React.useState(false)
@@ -286,7 +288,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
               key={session.sessionId}
               type="button"
               className="mate-row mate-row-session"
-              onClick={() => openSession(session.sessionId)}
+              onClick={() => setSessionDrawerId(session.sessionId)}
             >
               <div className="mate-row-main">
                 <span className="mate-row-title">{session.title}</span>
@@ -295,18 +297,6 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                 </span>
               </div>
               <Badge tone="warn">{t('badge.untracked')}</Badge>
-              <Button
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void controller.run<RequirementView>(
-                    `adopt:${session.sessionId}`,
-                    COMMANDS.requirementAdoptSession,
-                    { sessionId: session.sessionId },
-                  ).then((created) => { if (created !== null) setDrawerId(created.id) })
-                }}
-              >
-                {t('action.adopt')}
-              </Button>
             </button>
           ))}
           {filtered.length === 0 && sessionCards.length === 0
@@ -331,7 +321,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                     lang={lang}
                     childrenCount={snapshot.requirements.filter((item) => item.parentId === card.requirement.id).length}
                     onOpen={() => setDrawerId(card.requirement.id)}
-                    onOpenSession={() => openSession(card.requirement.dispatch?.sessionId ?? '')}
+                    onOpenSession={() => setSessionDrawerId(card.requirement.dispatch?.sessionId ?? '')}
                   />
                 ) : (
                   <SessionCard
@@ -339,19 +329,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                     session={card.session}
                     t={t}
                     lang={lang}
-                    busy={busy(`adopt:${card.session.sessionId}`) || busy(`hide:${card.session.sessionId}`)}
-                    onOpen={() => openSession(card.session.sessionId)}
-                    onAdopt={async () => {
-                      const created = await controller.run<RequirementView>(
-                        `adopt:${card.session.sessionId}`,
-                        COMMANDS.requirementAdoptSession,
-                        { sessionId: card.session.sessionId },
-                      )
-                      if (created !== null) setDrawerId(created.id)
-                    }}
-                    onHide={async () => {
-                      await controller.run(`hide:${card.session.sessionId}`, COMMANDS.sessionHide, { sessionId: card.session.sessionId })
-                    }}
+                    onOpen={() => setSessionDrawerId(card.session.sessionId)}
                   />
                 ))}
             </div>
@@ -424,6 +402,21 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           }}
           onRestoreHidden={async (sessionId) => {
             await controller.run('restore:' + sessionId, COMMANDS.sessionHide, { sessionId, hidden: false })
+          }}
+        />
+      ) : null}
+
+      {sessionDrawerId !== null ? (
+        <SessionDrawer
+          sessionId={sessionDrawerId}
+          controller={controller}
+          t={t}
+          lang={lang}
+          onClose={() => setSessionDrawerId(null)}
+          openSession={openSession}
+          onAdopted={(requirementId) => {
+            setSessionDrawerId(null)
+            setDrawerId(requirementId)
           }}
         />
       ) : null}
@@ -533,35 +526,26 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
  * requirement until the user adopts it, so its actions never mutate the
  * session itself.
  */
-function SessionCard({ session, t, lang, busy, onOpen, onAdopt, onHide }: {
+function SessionCard({ session, t, lang, onOpen }: {
   session: LiveSessionView
   t: PanelContext['t']
   lang: 'zh' | 'en'
-  busy: boolean
   onOpen: () => void
-  onAdopt: () => void | Promise<void>
-  onHide: () => void | Promise<void>
 }): React.ReactElement {
   return (
-    <div className="mate-card mate-card-session">
-      <button type="button" className="mate-card-open" onClick={onOpen}>
-        <span className="mate-card-title">{session.title}</span>
-        <span className="mate-card-meta">
-          <Badge tone="warn">{t('badge.untracked')}</Badge>
-          <span>{session.running ? t('status.running') : t('badge.idle')}</span>
-          <span>·</span>
-          <span>{projectLabel(session.cwd)}</span>
-          <span style={{ marginLeft: 'auto' }}>{formatRelative(session.updatedAt, lang)}</span>
-        </span>
-      </button>
-      <div className="mate-card-actions">
-        <Button onClick={onOpen}>{t('action.openSession')}</Button>
-        <Button variant="primary" busy={busy} onClick={() => { void onAdopt() }}>{t('action.adopt')}</Button>
-        <Button variant="ghost" onClick={() => { void onHide() }}>{t('action.hideSession')}</Button>
-      </div>
-    </div>
+    <button type="button" className="mate-card mate-card-session" onClick={onOpen} title={session.sessionId}>
+      <span className="mate-card-title">{session.title}</span>
+      <span className="mate-card-meta">
+        <Badge tone="warn">{t('badge.untracked')}</Badge>
+        <span>{session.running ? t('status.running') : t('badge.idle')}</span>
+        <span>·</span>
+        <span>{projectLabel(session.cwd)}</span>
+        <span style={{ marginLeft: 'auto' }}>{formatRelative(session.updatedAt, lang)}</span>
+      </span>
+    </button>
   )
 }
+
 
 
 

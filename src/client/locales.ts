@@ -68,6 +68,13 @@ const ZH: Record<string, string> = {
   'compose.hint': 'Ctrl/⌘ + Enter 发送',
   'action.send': '发送',
   'card.session': '会话',
+  'session.preview': '会话预览',
+  'session.loading': '加载会话…',
+  'session.empty': '这个会话还没有消息。',
+  'session.unavailable': '当前 profile 无法读取会话内容',
+  'session.you': '我',
+  'session.assistant': '助手',
+  'session.loadFailed': '加载会话失败',
   'compose.name': '标题',
   'compose.brief': '需求描述',
   'compose.briefHint': '几句话即可；Mate 会分析并决定怎么拆分、派给谁。',
@@ -215,6 +222,13 @@ const EN: Record<string, string> = {
   'compose.hint': 'Ctrl/⌘ + Enter to send',
   'action.send': 'Send',
   'card.session': 'Session',
+  'session.preview': 'Session preview',
+  'session.loading': 'Loading session…',
+  'session.empty': 'This session has no messages yet.',
+  'session.unavailable': 'This profile cannot read session content',
+  'session.you': 'Me',
+  'session.assistant': 'Assistant',
+  'session.loadFailed': 'Failed to load the session',
   'compose.name': 'Title',
   'compose.brief': 'Description',
   'compose.briefHint': 'A few sentences is enough; Mate decides how to split and dispatch it.',
@@ -309,6 +323,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

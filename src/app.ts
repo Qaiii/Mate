@@ -13,6 +13,8 @@ import {
   type PlanView,
   type RequirementStatus,
   type RequirementView,
+  type SessionTranscriptMessage,
+  type SessionTranscriptView,
   type SettingsView,
   type Snapshot,
 } from './shared.js'
@@ -37,6 +39,7 @@ const DEFAULT_TARGETS = { analysis: 4000, summary: 2500 }
 /** Orchestrates the requirement lifecycle, model calls, and session dispatch. */
 export class MateApp {
   private language = 'zh'
+  private messages: ((sessionId: string) => Promise<SessionTranscriptMessage[]>) | null = null
   private readonly inflight = new Set<string>()
   private readonly requestCache = new Map<string, unknown>()
   private queue: Promise<unknown> = Promise.resolve()
@@ -56,6 +59,10 @@ export class MateApp {
 
   setTranscriptReader(reader: ((sessionId: string) => Promise<string>) | null): void {
     this.deps.transcript = reader
+  }
+
+  setMessageReader(reader: ((sessionId: string) => Promise<SessionTranscriptMessage[]>) | null): void {
+    this.messages = reader
   }
 
   /**
@@ -119,6 +126,7 @@ export class MateApp {
       case COMMANDS.requirementDelete: return this.deleteRequirement(args)
       case COMMANDS.requirementAdoptSession: return this.adoptSession(args)
       case COMMANDS.sessionHide: return this.hideSession(args)
+      case COMMANDS.sessionTranscript: return this.sessionTranscript(args)
       case COMMANDS.mateCreate: return this.createMate(args)
       case COMMANDS.mateUpdate: return this.updateMate(args)
       case COMMANDS.mateArchive: return this.archiveMate(args)
@@ -834,6 +842,44 @@ export class MateApp {
     return { hidden: true }
   }
 
+  /** Read one existing session's transcript for the preview drawer. */
+  private async sessionTranscript(args: Record<string, unknown>): Promise<SessionTranscriptView> {
+    const sessionId = requiredString(args.sessionId, 'session-required', 'A session id is required')
+    let title = ''
+    let cwd = ''
+    let running = false
+    let updatedAt = 0
+    try {
+      const items = (await this.deps.controller.list({}, this.lifetime.signal)).items
+      const summary = items.find((item) => item.sessionId === sessionId)
+      if (summary !== undefined) {
+        title = sessionTitle(summary)
+        cwd = typeof summary.cwd === 'string' ? summary.cwd : ''
+        running = summary.running === true
+        updatedAt = typeof summary.updatedAt === 'number' ? summary.updatedAt : 0
+      }
+    } catch {
+      // The header stays minimal when the list read fails; the transcript may still load.
+    }
+    if (this.messages === null) {
+      return { sessionId, title, cwd, running, updatedAt, messages: [], unavailable: 'sessionQuery is unavailable in this profile' }
+    }
+    try {
+      const messages = await this.messages(sessionId)
+      return { sessionId, title, cwd, running, updatedAt, messages }
+    } catch (error) {
+      return {
+        sessionId,
+        title,
+        cwd,
+        running,
+        updatedAt,
+        messages: [],
+        unavailable: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
   private async projects(): Promise<ProjectOption[]> {
     const found = new Map<string, string>()
     for (const project of this.deps.store.storedProjects()) found.set(project.path, project.title)
@@ -927,4 +973,5 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
 

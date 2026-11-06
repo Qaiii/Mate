@@ -191,6 +191,23 @@ export interface StateRequest {
   rev?: number
 }
 
+/** One readable turn of an existing session, loaded for the preview drawer. */
+export interface SessionTranscriptMessage {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+export interface SessionTranscriptView {
+  sessionId: string
+  title: string
+  cwd: string
+  running: boolean
+  updatedAt: number
+  messages: SessionTranscriptMessage[]
+  /** Present when the transcript could not be read in this profile. */
+  unavailable?: string
+}
+
 export interface StateResponse {
   unchanged: boolean
   rev: number
@@ -231,6 +248,7 @@ export const COMMANDS = {
   requirementDelete: 'requirement.delete',
   requirementAdoptSession: 'requirement.adoptSession',
   sessionHide: 'session.hide',
+  sessionTranscript: 'session.transcript',
   mateCreate: 'mate.create',
   mateUpdate: 'mate.update',
   mateArchive: 'mate.archive',

@@ -39,21 +39,26 @@ function textOfMessage(message: unknown): string {
 
 /** Reduce a validated session log to a bounded transcript for the summarizer. */
 function reduceTranscript(snapshot: unknown): string {
+  return reduceMessages(snapshot)
+    .map((message) => `${message.role === 'user' ? 'USER' : 'ASSISTANT'}: ${message.text}`)
+    .join('\n\n')
+    .slice(-20000)
+}
+
+/** Reduce a validated session log to readable chat turns for the preview drawer. */
+function reduceMessages(snapshot: unknown): Array<{ role: 'user' | 'assistant'; text: string }> {
   const events = (snapshot as { events?: unknown })?.events
-  if (!Array.isArray(events)) return ''
-  const lines: string[] = []
+  if (!Array.isArray(events)) return []
+  const messages: Array<{ role: 'user' | 'assistant'; text: string }> = []
   for (const event of events) {
     if (event === null || typeof event !== 'object') continue
     const record = event as { type?: unknown; data?: Record<string, unknown> }
-    if (record.type === 'user/message') {
-      const text = textOfMessage(record.data?.message)
-      if (text.trim().length > 0) lines.push(`USER: ${text}`)
-    } else if (record.type === 'assistant/message') {
-      const text = textOfMessage(record.data?.message)
-      if (text.trim().length > 0) lines.push(`ASSISTANT: ${text}`)
-    }
+    if (record.type !== 'user/message' && record.type !== 'assistant/message') continue
+    const text = textOfMessage(record.data?.message).trim()
+    if (text.length === 0) continue
+    messages.push({ role: record.type === 'user/message' ? 'user' : 'assistant', text: text.slice(0, 4000) })
   }
-  return lines.slice(-160).join('\n\n').slice(-20000)
+  return messages.slice(-80)
 }
 
 /**
@@ -104,6 +109,7 @@ export function apply(ctx: Context): void {
               { readSession(id: string): Promise<unknown> } | undefined
             if (query === undefined || typeof query.readSession !== 'function') return
             app.setTranscriptReader(async (sessionId) => reduceTranscript(await query.readSession(sessionId)))
+            app.setMessageReader(async (sessionId) => reduceMessages(await query.readSession(sessionId)))
           })
 
           // The api-session events are declared by the shipped session-controller
