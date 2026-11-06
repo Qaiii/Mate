@@ -42,7 +42,13 @@ export const STYLES = `
   transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 .mate-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)); }
-.mate-btn:disabled { opacity: 0.55; cursor: default; }
+.mate-btn:disabled {
+  cursor: default;
+  opacity: 1;
+  color: var(--dsw-alias-label-secondary, #4b5563);
+  border-color: var(--dsw-alias-border-l1, rgba(128,128,128,0.2));
+  background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.06));
+}
 .mate-btn.primary {
   border-color: transparent;
   /* Two declarations: if a theme token is missing or resolves invalid, the
@@ -54,6 +60,11 @@ export const STYLES = `
   font-weight: 600;
 }
 .mate-btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.mate-btn.primary:disabled {
+  background: var(--dsw-alias-button-primary-dimmed, #e9ecf2);
+  color: var(--dsw-alias-label-secondary, #4b5563);
+  border-color: transparent;
+}
 .mate-btn.danger { color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #c62828) 80%, var(--dsw-alias-label-primary, #0f1115)); }
 .mate-btn.ghost { border-color: transparent; background: transparent; }
 .mate-btn.ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)); }
@@ -360,6 +371,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 
