@@ -105,6 +105,9 @@ export function SessionDrawer({ sessionId, controller, t, lang, onClose, openSes
 
   const startDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return
+    // Pointer capture would retarget the click away from the toggle and close
+    // buttons; only the title area starts a drag.
+    if ((event.target as HTMLElement).closest('.mate-window-tools') !== null) return
     const rect = frameRef.current?.getBoundingClientRect()
     if (rect === undefined) return
     dragRef.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top }
@@ -115,12 +118,20 @@ export function SessionDrawer({ sessionId, controller, t, lang, onClose, openSes
     const offset = dragRef.current
     if (offset === null) return
     const width = frameRef.current?.offsetWidth ?? 720
+    const titlebar = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dsh-windows-titlebar-height')) || 0
     const x = Math.min(Math.max(8, event.clientX - offset.dx), Math.max(8, window.innerWidth - width - 8))
-    const y = Math.min(Math.max(8, event.clientY - offset.dy), Math.max(8, window.innerHeight - 80))
+    const y = Math.min(Math.max(titlebar + 8, event.clientY - offset.dy), Math.max(titlebar + 8, window.innerHeight - 80))
     setPosition({ x, y })
   }
 
-  const endDrag = (): void => { dragRef.current = null }
+  const endDrag = (): void => {
+    dragRef.current = null
+    const frame = frameRef.current
+    if (frame !== null) {
+      const titlebar = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dsh-windows-titlebar-height')) || 0
+      if (frame.offsetTop < titlebar) setPosition({ x: frame.offsetLeft, y: titlebar + 8 })
+    }
+  }
 
   const title = data?.title !== undefined && data.title.length > 0 ? data.title : sessionId
 
@@ -225,3 +236,5 @@ export function SessionDrawer({ sessionId, controller, t, lang, onClose, openSes
     </div>
   )
 }
+
+

@@ -230,7 +230,11 @@ export const STYLES = `
 .mate-viewtoggle button.on { background: var(--dsw-alias-interactive-bg-active, rgba(128,128,128,0.16)); color: var(--dsw-alias-label-primary, #0f1115); font-weight: 600; }
 .mate-window {
   position: fixed; z-index: 55;
-  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  left: 50%;
+  /* Keep the panel below the desktop window controls when the host declares
+     a title bar, without leaving a gap in the browser. */
+  top: calc(50% + var(--dsh-windows-titlebar-height, 0px) / 2);
+  transform: translate(-50%, -50%);
   width: min(760px, 92vw); max-height: min(78vh, 720px);
   display: flex; flex-direction: column; gap: 10px;
   padding: 12px 14px 14px; border-radius: 14px;
@@ -249,7 +253,12 @@ export const STYLES = `
 .mate-window-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mate-window-tools { display: flex; align-items: center; gap: 6px; flex: none; }
 .mate-window-body { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
-.mate-drawer-backdrop { position: fixed; inset: 0; z-index: 50; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.3)); display: flex; justify-content: flex-end; }
+.mate-drawer-backdrop {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  top: var(--dsh-windows-titlebar-height, 0px);
+  background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.3));
+  display: flex; justify-content: flex-end;
+}
 .mate-drawer {
   width: min(680px, 94vw); height: 100%; overflow-y: auto;
   padding: 18px 20px 28px; display: flex; flex-direction: column; gap: 14px;
@@ -388,6 +397,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 
