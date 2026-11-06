@@ -300,6 +300,7 @@ export const COMMANDS = {
   mateDistill: 'mate.distill',
   mateRemember: 'mate.remember',
   mateForget: 'mate.forget',
+  mateMemoryEdit: 'mate.memory.edit',
   settingsUpdate: 'settings.update',
 } as const
 
@@ -324,6 +325,7 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+
 
 
 

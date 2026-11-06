@@ -175,18 +175,31 @@ export function MatePanel(context: PanelContext): React.ReactElement {
             {t('filter.allMates')}
           </button>
           {mates.map((mate) => (
-            <button
-              key={mate.id}
-              type="button"
-              className={`mate-chip${mateFilter === mate.id ? ' on' : ''}`}
-              onClick={() => setMateFilter(mate.id)}
-              onDoubleClick={() => setMateEditor(mate)}
-              title={`${mate.specialty || mate.description}\n${mate.model.provider}/${mate.model.model}`}
-            >
-              <span className="mate-dot" />
-              {mate.name}
-              <span style={{ opacity: 0.6 }}>{mate.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}</span>
-            </button>
+            <span key={mate.id} className="mate-chipwrap">
+              <button
+                type="button"
+                className={`mate-chip${mateFilter === mate.id ? ' on' : ''}`}
+                onClick={() => setMateFilter(mate.id)}
+                onDoubleClick={() => setMateEditor(mate)}
+                title={`${mate.specialty || mate.description}\n${mate.model.provider}/${mate.model.model}`}
+              >
+                <span className="mate-dot" />
+                {mate.name}
+                <span style={{ opacity: 0.6 }}>{mate.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}</span>
+              </button>
+              <button
+                type="button"
+                className="mate-chip-edit"
+                title={t('action.editMate')}
+                aria-label={`${t('action.editMate')} ${mate.name}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setMateEditor(mate)
+                }}
+              >
+                ✎
+              </button>
+            </span>
           ))}
         </div>
       ) : null}
@@ -382,6 +395,9 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           }}
           onForget={async (mateId, entryId) => {
             return controller.run<MateView>('mate.forget', COMMANDS.mateForget, { id: mateId, entryId })
+          }}
+          onEditMemory={async (mateId, entryId, kind, text) => {
+            return controller.run<MateView>('mate.memory.edit', COMMANDS.mateMemoryEdit, { id: mateId, entryId, kind, text })
           }}
           onEfforts={async (provider, model) => {
             return controller.run<ModelEffortsView>('model.efforts', COMMANDS.modelEfforts, { provider, model })

@@ -161,6 +161,7 @@ export class MateApp {
       case COMMANDS.mateDistill: return this.distillMate(args)
       case COMMANDS.mateRemember: return this.rememberMemory(args)
       case COMMANDS.mateForget: return this.forgetMemory(args)
+      case COMMANDS.mateMemoryEdit: return this.editMemory(args)
       case COMMANDS.settingsUpdate: return this.updateSettings(args)
       default: throw new CommandError('unknown-command', `unknown command: ${request.command}`)
     }
@@ -291,6 +292,18 @@ export class MateApp {
     return this.deps.store.putMate({ ...mate, memory, updatedAt: Date.now() })
   }
 
+  /** Rewrite one memory entry the Mate already holds. */
+  private async editMemory(args: Record<string, unknown>): Promise<MateView> {
+    const mate = this.requireMate(args.id)
+    const entryId = requiredString(args.entryId, 'entry-required', 'A memory entry is required')
+    const text = requiredString(args.text, 'text-required', 'A memory entry needs text').slice(0, 500)
+    const kinds: Array<MateMemoryEntry['kind']> = ['role', 'constraint', 'preference', 'glossary', 'note']
+    const kind = kinds.find((candidate) => candidate === args.kind)
+    const memory = (mate.memory ?? []).map((entry) => entry.id === entryId
+      ? { ...entry, text, ...(kind === undefined ? {} : { kind }) }
+      : entry)
+    return this.deps.store.putMate({ ...mate, memory, updatedAt: Date.now() })
+  }
   private async forgetMemory(args: Record<string, unknown>): Promise<MateView> {
     const mate = this.requireMate(args.id)
     const entryId = requiredString(args.entryId, 'entry-required', 'A memory entry is required')
@@ -1159,6 +1172,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
 
 
 

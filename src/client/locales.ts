@@ -129,6 +129,8 @@ const ZH: Record<string, string> = {
   'action.applyRemember': '写入记忆',
   'mate.teachPlaceholder': '例如：这个项目只允许改 apps/web；回复我时先给结论；我们内部把「吐司」叫 toast。',
   'action.remember': '让 Mate 记住',
+  'action.edit': '编辑',
+  'action.editMate': '修改 Mate',
   'action.forget': '忘记',
   'memory.kind.role': '角色',
   'memory.kind.constraint': '限制',
@@ -332,6 +334,8 @@ const EN: Record<string, string> = {
   'action.applyRemember': 'Write to memory',
   'mate.teachPlaceholder': 'e.g. only touch apps/web in this project; lead with the conclusion; we call the toast a "snack".',
   'action.remember': 'Remember this',
+  'action.edit': 'Edit',
+  'action.editMate': 'Edit Mate',
   'action.forget': 'Forget',
   'memory.kind.role': 'role',
   'memory.kind.constraint': 'constraint',
@@ -421,6 +425,8 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
+
 
 
 

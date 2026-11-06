@@ -80,6 +80,12 @@ export const STYLES = `
 }
 .mate-seg button.on { background: var(--dsw-alias-interactive-bg-active, rgba(128,128,128,0.16)); color: var(--dsw-alias-label-primary, #0f1115); font-weight: 600; }
 .mate-chiprow { display: flex; gap: 6px; flex-wrap: wrap; }
+.mate-chipwrap { display: inline-flex; align-items: center; gap: 2px; }
+.mate-chip-edit {
+  border: 0; background: transparent; cursor: pointer; padding: 2px 5px; border-radius: 6px;
+  color: var(--dsw-alias-label-secondary, #4b5563); font-size: 12px; line-height: 1.4;
+}
+.mate-chip-edit:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)); color: var(--dsw-alias-label-primary, #0f1115); }
 .mate-chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 10px; border-radius: 999px; cursor: pointer;
@@ -419,6 +425,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 

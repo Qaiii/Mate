@@ -222,7 +222,7 @@ export interface MatePayload {
 }
 
 /** Mate identity is the name it displays and answers as; the model is one pick. */
-export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onDistill, onRemember, onForget, onEfforts }: {
+export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onDistill, onRemember, onForget, onEditMemory, onEfforts }: {
   mate: MateView | null
   snapshot: Snapshot | null
   t: Translator
@@ -233,6 +233,7 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   onDistill: (mateId: string, text: string) => Promise<MateDistillView | null>
   onRemember: (mateId: string, entries: Array<{ kind: MateMemoryKind; text: string }>) => Promise<MateView | null>
   onForget: (mateId: string, entryId: string) => Promise<MateView | null>
+  onEditMemory: (mateId: string, entryId: string, kind: MateMemoryKind, text: string) => Promise<MateView | null>
   onEfforts: (provider: string, model: string) => Promise<ModelEffortsView | null>
 }): React.ReactElement {
   const catalog = snapshot?.settings.modelCatalog ?? []
@@ -252,6 +253,7 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   const [memoryBusy, setMemoryBusy] = React.useState(false)
   const [proposal, setProposal] = React.useState<MateDistillView['entries'] | null>(null)
   const [created, setCreated] = React.useState<MateView | null>(null)
+  const [editing, setEditing] = React.useState<{ id: string; kind: MateMemoryKind; text: string } | null>(null)
   const [effort, setEffort] = React.useState(mate?.model.reasoningEffort ?? '')
   const [efforts, setEfforts] = React.useState<ModelEffortsView['efforts']>([])
   const [effortsLoading, setEffortsLoading] = React.useState(false)
@@ -349,6 +351,20 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     }
   }
 
+  const saveEdit = async (): Promise<void> => {
+    if (editing === null || effectiveId === null || memoryBusy) return
+    setMemoryBusy(true)
+    try {
+      const updated = await onEditMemory(effectiveId, editing.id, editing.kind, editing.text.trim())
+      if (updated !== null) {
+        setMemory(updated.memory ?? [])
+        setEditing(null)
+      }
+    } finally {
+      setMemoryBusy(false)
+    }
+  }
+
   const forget = async (entryId: string): Promise<void> => {
     if (effectiveId === null || memoryBusy) return
     setMemoryBusy(true)
@@ -439,14 +455,55 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
             ) : (
               memory.map((entry) => (
                 <div key={entry.id} className="mate-row" style={{ cursor: 'default', alignItems: 'flex-start' }}>
-                  <span className="mate-row-main">
-                    <span className="mate-row-title" style={{ whiteSpace: 'normal' }}>
-                      <Badge>{t(`memory.kind.${entry.kind}`)}</Badge> {entry.text}
-                    </span>
-                  </span>
-                  <Button variant="ghost" busy={memoryBusy} onClick={() => { void forget(entry.id) }}>
-                    {t('action.forget')}
-                  </Button>
+                  {editing !== null && editing.id === entry.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                      <select
+                        className="mate-select"
+                        value={editing.kind}
+                        onChange={(event) => setEditing({ ...editing, kind: event.target.value as MateMemoryKind })}
+                      >
+                        {(['role', 'constraint', 'preference', 'glossary', 'note'] as const).map((kind) => (
+                          <option key={kind} value={kind}>{t(`memory.kind.${kind}`)}</option>
+                        ))}
+                      </select>
+                      <textarea
+                        className="mate-textarea"
+                        value={editing.text}
+                        onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Button
+                          variant="primary"
+                          busy={memoryBusy}
+                          disabled={editing.text.trim().length === 0}
+                          onClick={() => { void saveEdit() }}
+                        >
+                          {t('action.save')}
+                        </Button>
+                        <Button variant="ghost" disabled={memoryBusy} onClick={() => setEditing(null)}>
+                          {t('action.cancel')}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="mate-row-main">
+                        <span className="mate-row-title" style={{ whiteSpace: 'normal' }}>
+                          <Badge>{t(`memory.kind.${entry.kind}`)}</Badge> {entry.text}
+                        </span>
+                      </span>
+                      <Button
+                        variant="ghost"
+                        disabled={memoryBusy}
+                        onClick={() => setEditing({ id: entry.id, kind: entry.kind, text: entry.text })}
+                      >
+                        {t('action.edit')}
+                      </Button>
+                      <Button variant="ghost" busy={memoryBusy} onClick={() => { void forget(entry.id) }}>
+                        {t('action.forget')}
+                      </Button>
+                    </>
+                  )}
                 </div>
               ))
             )}
@@ -598,6 +655,7 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
 
 
 
