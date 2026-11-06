@@ -1,29 +1,50 @@
 import React from 'react'
-import type { MateView, ModelSelection, Snapshot } from '../shared.js'
+import { COMMANDS, type MateView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
 import type { Translator } from './locales.js'
+import type { MateController } from './controller.js'
+import { projectLabel } from './types.js'
 import { Button, Field, Modal } from './ui.js'
 
 export interface ComposePayload {
   brief: string
   mateId: string
+  projectSource: ProjectSource
   projectPath: string
+  projectTitle?: string
 }
 
+type ProjectMode = 'auto' | 'user' | 'user-new'
+
 /**
- * One input is enough: the body is the requirement. The Mate names the card,
- * picks the project, the session model and whether to split.
+ * One input is enough for the body: the Mate names the card. The project is a
+ * three-mode choice — auto (Mate decides), an existing project, or a new one —
+ * and never overwrites the other fields while switching.
  */
-export function ComposeDialog({ snapshot, t, busy, projectPath, onClose, onSubmit }: {
+export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit }: {
   snapshot: Snapshot
+  controller: MateController
   t: Translator
   busy: boolean
-  projectPath: string
   onClose: () => void
   onSubmit: (payload: ComposePayload) => void | Promise<void>
 }): React.ReactElement {
   const mates = snapshot.mates.filter((mate) => !mate.archived)
+  const projects = snapshot.projects
+  const lastProjectPath = snapshot.settings.lastProjectPath
+  const lastValid = lastProjectPath !== null && lastProjectPath.length > 0
+    && projects.some((project) => project.path === lastProjectPath)
+    ? lastProjectPath
+    : null
+
   const [brief, setBrief] = React.useState('')
   const [mateId, setMateId] = React.useState(snapshot.settings.defaultMateId ?? mates[0]?.id ?? '')
+  const [mode, setMode] = React.useState<ProjectMode>('auto')
+  const [source, setSource] = React.useState<ProjectSource>('auto')
+  const [selectedPath, setSelectedPath] = React.useState('')
+  const [newPath, setNewPath] = React.useState('')
+  const [pickerBusy, setPickerBusy] = React.useState(false)
+  const [registerBusy, setRegisterBusy] = React.useState(false)
+  const [hint, setHint] = React.useState<string | null>(null)
   const areaRef = React.useRef<HTMLTextAreaElement | null>(null)
 
   React.useEffect(() => {
@@ -31,9 +52,79 @@ export function ComposeDialog({ snapshot, t, busy, projectPath, onClose, onSubmi
   }, [])
 
   const canSend = brief.trim().length > 0 && mateId.length > 0 && !busy
+
+  const enterUserMode = (): void => {
+    if (lastProjectPath !== null && lastProjectPath.length > 0 && lastValid === null) {
+      // The remembered project is no longer in the list: fall back to auto.
+      setMode('auto')
+      setSource('auto')
+      setHint(t('compose.projectLastGone'))
+      return
+    }
+    setMode('user')
+    setSource('user')
+    setHint(null)
+    setSelectedPath((current) => current.length > 0 ? current : (lastValid ?? projects[0]?.path ?? ''))
+  }
+
+  const pickNative = async (): Promise<void> => {
+    setPickerBusy(true)
+    setHint(null)
+    try {
+      const result = await controller.run<{ path: string | null }>('project.pickDirectory', COMMANDS.projectPickDirectory, {})
+      if (result !== null && typeof result.path === 'string' && result.path.length > 0) {
+        setSelectedPath(result.path)
+        setSource('user-new')
+        setMode('user')
+        setNewPath('')
+        setHint(t('compose.projectRegistered'))
+      }
+    } catch {
+      // Errors surface through the controller notice; keep the manual input.
+    } finally {
+      setPickerBusy(false)
+    }
+    if (controller.getSnapshot().notice?.kind === 'error') {
+      setHint(controller.getSnapshot().notice?.text ?? t('error.projectPickFailed'))
+    }
+  }
+
+  const registerManual = async (): Promise<void> => {
+    const path = newPath.trim()
+    if (path.length === 0) return
+    setRegisterBusy(true)
+    setHint(null)
+    try {
+      const result = await controller.run<{ path: string; title: string }>('project.register', COMMANDS.projectRegister, { path })
+      if (result !== null) {
+        setSelectedPath(result.path)
+        setSource('user-new')
+        setMode('user')
+        setNewPath('')
+        setHint(t('compose.projectRegistered'))
+      } else {
+        setHint(controller.getSnapshot().notice?.text ?? t('error.projectRegisterFailed'))
+      }
+    } finally {
+      setRegisterBusy(false)
+    }
+  }
+
   const send = (): void => {
     if (!canSend) return
-    void onSubmit({ brief: brief.trim(), mateId, projectPath })
+    let projectSource: ProjectSource = 'auto'
+    let projectPath = ''
+    let projectTitle: string | undefined
+    if (mode === 'user' && selectedPath.length > 0) {
+      projectSource = source
+      projectPath = selectedPath
+      projectTitle = projects.find((project) => project.path === selectedPath)?.title
+    } else if (mode !== 'auto') {
+      // New-project mode with no directory chosen (or user mode with an empty
+      // list): degrade to auto and say so.
+      setHint(t('compose.projectFallbackAuto'))
+    }
+    void onSubmit({ brief: brief.trim(), mateId, projectSource, projectPath, projectTitle })
   }
 
   return (
@@ -66,7 +157,7 @@ export function ComposeDialog({ snapshot, t, busy, projectPath, onClose, onSubmi
       <textarea
         ref={areaRef}
         className="mate-textarea"
-        style={{ minHeight: 168 }}
+        style={{ minHeight: 120 }}
         value={brief}
         placeholder={t('compose.placeholder')}
         onChange={(event) => setBrief(event.target.value)}
@@ -77,6 +168,74 @@ export function ComposeDialog({ snapshot, t, busy, projectPath, onClose, onSubmi
           }
         }}
       />
+
+      <Field label={t('compose.projectMode')} hint={t('compose.projectModeHint')}>
+        <div className="mate-seg" role="radiogroup" aria-label={t('compose.projectMode')}>
+          <button
+            type="button"
+            className={mode === 'auto' ? 'on' : ''}
+            onClick={() => { setMode('auto'); setSource('auto'); setHint(null) }}
+          >
+            {t('compose.projectAuto')}
+          </button>
+          <button type="button" className={mode === 'user' ? 'on' : ''} onClick={enterUserMode}>
+            {t('compose.projectList')}
+          </button>
+          <button
+            type="button"
+            className={mode === 'user-new' ? 'on' : ''}
+            onClick={() => { setMode('user-new'); setSource('user-new'); setHint(null) }}
+          >
+            {t('compose.projectNew')}
+          </button>
+        </div>
+      </Field>
+
+      {mode === 'auto' ? (
+        <div className="mate-sub">{t('compose.projectAutoHint')}</div>
+      ) : null}
+
+      {mode === 'user' ? (
+        <Field label={t('compose.project')} hint={t('compose.projectListHint')}>
+          <select
+            className="mate-select"
+            value={selectedPath}
+            onChange={(event) => { setSelectedPath(event.target.value); setSource('user') }}
+          >
+            {projects.map((project) => (
+              <option key={project.path} value={project.path}>{projectLabel(project.path)} — {project.path}</option>
+            ))}
+            {selectedPath.length > 0 && projects.every((project) => project.path !== selectedPath) ? (
+              <option value={selectedPath}>{selectedPath}</option>
+            ) : null}
+          </select>
+        </Field>
+      ) : null}
+
+      {mode === 'user-new' ? (
+        <Field label={t('compose.projectNew')} hint={t('compose.projectNewHint')}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button busy={pickerBusy} onClick={() => { void pickNative() }}>{t('compose.projectNewPick')}</Button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                className="mate-input"
+                value={newPath}
+                placeholder={t('compose.projectPathPlaceholder')}
+                onChange={(event) => setNewPath(event.target.value)}
+              />
+              <Button busy={registerBusy} disabled={newPath.trim().length === 0} onClick={() => { void registerManual() }}>
+                {t('compose.projectNewRegister')}
+              </Button>
+            </div>
+          </div>
+        </Field>
+      ) : null}
+
+      {hint !== null ? (
+        <div className="mate-sub" style={{ color: 'var(--dsw-alias-state-warn-label, #dd8629)' }}>{hint}</div>
+      ) : null}
     </Modal>
   )
 }

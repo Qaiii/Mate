@@ -4,12 +4,19 @@ export type AutonomyMode = 'confirm' | 'auto'
 export type RequirementKind = 'requirement' | 'goal'
 export type Priority = 'low' | 'normal' | 'high'
 
+/** Where a requirement's dispatch project came from (for the card badge). */
+export type ProjectSource = 'auto' | 'user' | 'user-new'
+
+/** The user's final call when a manual project disagrees with the Mate's suggestion. */
+export type ProjectResolution = 'user' | 'mate'
+
 export type RequirementStatus =
   | 'draft'
   | 'analyzing'
   | 'clarifying'
   | 'proposed'
   | 'approved'
+  | 'conflict'
   | 'running'
   | 'awaiting_review'
   | 'done'
@@ -127,6 +134,10 @@ export interface RequirementView {
   status: RequirementStatus
   autonomy: AutonomyMode
   sessionOverrides: ModelSelection | null
+  /** Where the dispatch project came from; absent on pre-feature rows (treated as 'auto'). */
+  projectSource?: ProjectSource
+  /** The user's conflict resolution; null until a manual-vs-suggested conflict is settled. */
+  projectResolution?: ProjectResolution | null
   discussion: DiscussionEntryView[]
   analysis: AnalysisView | null
   plan: PlanView | null
@@ -174,6 +185,8 @@ export interface SettingsView {
   version: string
   /** Host-half start time of the process serving this snapshot. */
   lastStartedAt: number | null
+  /** Last manually selected project path, used to prefill the project-list mode. */
+  lastProjectPath: string | null
   modelCatalog: Array<{ provider: string; name: string; models: Array<{ id: string; name: string }> }>
 }
 
@@ -247,6 +260,9 @@ export const COMMANDS = {
   requirementAddChild: 'requirement.addChild',
   requirementDelete: 'requirement.delete',
   requirementAdoptSession: 'requirement.adoptSession',
+  requirementResolveProject: 'requirement.resolveProject',
+  projectRegister: 'project.register',
+  projectPickDirectory: 'project.pickDirectory',
   sessionHide: 'session.hide',
   sessionTranscript: 'session.transcript',
   mateCreate: 'mate.create',
@@ -269,6 +285,7 @@ export function statusLabel(status: RequirementStatus): string {
     case 'clarifying': return '澄清中'
     case 'proposed': return '待确认'
     case 'approved': return '已确认'
+    case 'conflict': return '待确认项目'
     case 'running': return '进行中'
     case 'awaiting_review': return '待验收'
     case 'done': return '已完成'

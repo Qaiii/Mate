@@ -3,7 +3,7 @@ import { COMMANDS, type LiveSessionView, type MateView, type RequirementStatus, 
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
 import { SessionDrawer } from './sessionDrawer.js'
-import { formatRelative, projectLabel, type PanelContext } from './types.js'
+import { formatRelative, projectLabel, projectSourceLabelKey, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
 
 type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed'
@@ -22,6 +22,7 @@ const STATUS_COLUMN: Record<RequirementStatus, ColumnKey> = {
   clarifying: 'pending',
   proposed: 'pending',
   approved: 'pending',
+  conflict: 'pending',
   running: 'running',
   awaiting_review: 'review',
   done: 'done',
@@ -344,9 +345,9 @@ export function MatePanel(context: PanelContext): React.ReactElement {
       {composeOpen && snapshot !== null ? (
         <ComposeDialog
           snapshot={snapshot}
+          controller={controller}
           t={t}
           busy={busy('requirement.create')}
-          projectPath={projectFilter !== 'all' ? projectFilter : snapshot.projects[0]?.path ?? ''}
           onClose={() => setComposeOpen(false)}
           onSubmit={async (payload) => {
             const created = await controller.run<RequirementView>('requirement.create', COMMANDS.requirementCreate, payload)
@@ -452,6 +453,8 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
           <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
             {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
           </Badge>
+          <Badge tone="confirm">{t(projectSourceLabelKey(requirement.projectSource))}</Badge>
+          {requirement.status === 'conflict' ? <Badge tone="warn">{t('status.conflict')}</Badge> : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
           {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
           <span>{t(`status.${status}`)}</span>

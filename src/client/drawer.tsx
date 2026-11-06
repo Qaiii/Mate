@@ -2,7 +2,7 @@ import React from 'react'
 import { COMMANDS, type RequirementView, type Snapshot } from '../shared.js'
 import type { MateController } from './controller.js'
 import type { Translator } from './locales.js'
-import { formatRelative, projectLabel } from './types.js'
+import { formatRelative, projectLabel, projectSourceLabelKey } from './types.js'
 import { Badge, Button, Field } from './ui.js'
 
 export interface DrawerProps {
@@ -56,6 +56,8 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
           <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
             {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
           </Badge>
+          <Badge tone="confirm">{t(projectSourceLabelKey(requirement.projectSource))}</Badge>
+          {requirement.status === 'conflict' ? <Badge tone="warn">{t('status.conflict')}</Badge> : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
           <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' ? 'warn' : ''}>
             {t(`status.${requirement.status}`)}
@@ -112,6 +114,46 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
             {t('action.delete')}
           </Button>
         </div>
+
+        {requirement.status === 'conflict' ? (
+          <section className="mate-section">
+            <h3>{t('drawer.projectConflict')}</h3>
+            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="mate-prose">
+                {t('drawer.projectConflictText', {
+                  suggested: projectLabel(requirement.analysis?.suggestedProjectPath ?? '') || '—',
+                  chosen: projectLabel(requirement.projectPath) || '—',
+                })}
+              </div>
+              <div className="mate-kv">
+                <span className="mate-mono">{requirement.analysis?.suggestedProjectPath ?? '—'}</span>
+                <span>vs</span>
+                <span className="mate-mono">{requirement.projectPath || '—'}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button
+                  variant="primary"
+                  busy={busy('requirement.resolveProject')}
+                  onClick={() => run('requirement.resolveProject', COMMANDS.requirementResolveProject, { choice: 'mate' })}
+                >
+                  {t('drawer.adoptMate')}
+                </Button>
+                <Button
+                  busy={busy('requirement.resolveProject')}
+                  onClick={() => run('requirement.resolveProject', COMMANDS.requirementResolveProject, { choice: 'user' })}
+                >
+                  {t('drawer.keepMine')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => run('requirement.resolveProject', COMMANDS.requirementResolveProject, { choice: 'user' })}
+                >
+                  {t('drawer.continueMine')}
+                </Button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="mate-section">
           <h3>{t('drawer.analysis')}</h3>

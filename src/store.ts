@@ -139,8 +139,34 @@ export class MateStore {
     if (!path) return
     const table = this.domain.table('projects')
     const existing = table.get(path)
-    if (existing !== undefined && existing.title === title) return
+    if (existing !== undefined) {
+      if (existing.title === title) return
+      await table.put(path, { ...existing, title, lastSeenAt: Date.now() })
+      return
+    }
     await table.put(path, { path, title, lastSeenAt: Date.now() })
+  }
+
+  /**
+   * Register a directory the user explicitly chose (new-project flow). This
+   * marks the row so `buildSnapshot` keeps it visible even before a session or
+   * requirement references it, and it survives the snapshot rebuild.
+   */
+  async registerProject(path: string, title: string): Promise<ProjectRecord> {
+    const table = this.domain.table('projects')
+    const existing = table.get(path)
+    if (existing !== undefined) {
+      const next: ProjectRecord = { ...existing, registered: true, lastSeenAt: Date.now() }
+      if (existing.registered !== true) {
+        await table.put(path, next)
+        this.bumpRevision()
+      }
+      return next
+    }
+    const record: ProjectRecord = { path, title, lastSeenAt: Date.now(), registered: true }
+    await table.put(path, record)
+    this.bumpRevision()
+    return record
   }
 
   storedProjects(): ProjectRecord[] {
@@ -185,11 +211,14 @@ export class MateStore {
       row.lastActiveAt = Math.max(row.lastActiveAt, session.updatedAt)
       byPath.set(session.cwd, row)
     }
-    // Only projects that are live, or still referenced by a requirement, reach
-    // the filter. Stored rows are a cache and can outlive their sessions.
+    // Live projects and those still referenced by a requirement reach the
+    // filter, plus directories the user explicitly registered. Stored rows are
+    // otherwise a cache and can outlive their sessions.
     const requirementPaths = new Set(this.listRequirements().map((item) => item.projectPath))
     for (const project of this.storedProjects()) {
-      if (byPath.has(project.path) || !requirementPaths.has(project.path)) continue
+      if (byPath.has(project.path)) continue
+      const keep = project.registered === true || requirementPaths.has(project.path)
+      if (!keep) continue
       byPath.set(project.path, {
         path: project.path,
         title: project.title,
@@ -220,6 +249,7 @@ export class MateStore {
         reuseIdleSession: settings.reuseIdleSession,
         version: PLUGIN_VERSION,
         lastStartedAt: settings.lastStartedAt ?? null,
+        lastProjectPath: settings.lastProjectPath ?? null,
         modelCatalog: source.modelCatalog(),
       },
       serverTime: Date.now(),

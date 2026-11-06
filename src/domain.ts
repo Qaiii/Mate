@@ -19,6 +19,8 @@ export interface ProjectRecord {
   path: string
   title: string
   lastSeenAt: number
+  /** True when the user explicitly registered this directory; stays visible with no live session. */
+  registered?: boolean
 }
 
 /** Plugin-wide counters and deployment tunables. */
@@ -27,6 +29,8 @@ export interface MateGlobalRecord {
   defaultMateId: string | null
   pollMs: number
   reuseIdleSession: boolean
+  /** The last manually selected project path, prefill for the project-list mode. */
+  lastProjectPath?: string | null
   /** Diagnostics: when the Host half last initialized. */
   lastStartedAt?: number
 }
@@ -138,10 +142,12 @@ const RequirementSchema: z.ZodType<RequirementView> = z.object({
   kind: z.enum(['requirement', 'goal']),
   status: z.enum([
     'draft', 'analyzing', 'clarifying', 'proposed', 'approved',
-    'running', 'awaiting_review', 'done', 'failed', 'cancelled',
+    'conflict', 'running', 'awaiting_review', 'done', 'failed', 'cancelled',
   ]),
   autonomy: z.enum(['confirm', 'auto']),
   sessionOverrides: ModelSelectionSchema.nullable(),
+  projectSource: z.enum(['auto', 'user', 'user-new']).optional(),
+  projectResolution: z.enum(['user', 'mate']).nullable().optional(),
   discussion: z.array(DiscussionSchema),
   analysis: AnalysisSchema.nullable(),
   plan: PlanSchema.nullable(),
@@ -157,6 +163,7 @@ const ProjectSchema: z.ZodType<ProjectRecord> = z.object({
   path: z.string(),
   title: z.string(),
   lastSeenAt: z.number(),
+  registered: z.boolean().optional(),
 })
 
 const GlobalSchema: z.ZodType<MateGlobalRecord> = z.object({
@@ -164,6 +171,7 @@ const GlobalSchema: z.ZodType<MateGlobalRecord> = z.object({
   defaultMateId: z.string().nullable(),
   pollMs: z.number(),
   reuseIdleSession: z.boolean(),
+  lastProjectPath: z.string().nullable().optional(),
   lastStartedAt: z.number().optional(),
 })
 
@@ -182,7 +190,7 @@ const HiddenSessionSchema: z.ZodType<HiddenSessionRecord> = z.object({
 export const mateDomain = defineDomain({
   name: 'mate',
   version: 1,
-  global: { schema: GlobalSchema, initial: { seq: 0, defaultMateId: null, pollMs: 2500, reuseIdleSession: false } },
+  global: { schema: GlobalSchema, initial: { seq: 0, defaultMateId: null, pollMs: 2500, reuseIdleSession: false, lastProjectPath: null } },
   tables: {
     mates: domainTable<string, MateView>(MateSchema),
     requirements: domainTable<string, RequirementView>(RequirementSchema),

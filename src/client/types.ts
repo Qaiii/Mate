@@ -1,5 +1,6 @@
 import type { MateState, MateController } from './controller.js'
 import type { Translator } from './locales.js'
+import type { ProjectSource } from '../shared.js'
 
 /** Props every view of the Mate panel shares. */
 export interface PanelContext {
@@ -32,4 +33,11 @@ export function projectLabel(path: string): string {
   if (!path) return '—'
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
   return normalized.split('/').pop() ?? path
+}
+
+/** Translation key for the requirement's project source badge. */
+export function projectSourceLabelKey(source: ProjectSource | undefined): string {
+  if (source === 'user') return 'badge.sourceUser'
+  if (source === 'user-new') return 'badge.sourceUserNew'
+  return 'badge.sourceAuto'
 }

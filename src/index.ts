@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-storage-domain'
 import { MateAnalyzer } from './analyzer.js'
 import { CommandError, MateApp } from './app.js'
 import { mateDomain } from './domain.js'
-import type { SessionControllerLike } from './dispatch.js'
+import type { SessionControllerLike, WorkspaceControllerLike } from './dispatch.js'
 import { API, type CommandRequest, type StateRequest } from './shared.js'
 import { MateStore } from './store.js'
 
@@ -98,7 +98,7 @@ export function apply(ctx: Context): void {
 
           const store = new MateStore(domain as never)
           const analyzer = llm ? new MateAnalyzer(llm as unknown as ConstructorParameters<typeof MateAnalyzer>[0]) : null
-          const app = new MateApp({ store, controller, analyzer, transcript: null, log })
+          const app = new MateApp({ store, controller, analyzer, transcript: null, workspaceController: null, log })
           await app.refreshModelCatalog()
           await app.markStarted()
           if (cancelled) return
@@ -110,6 +110,17 @@ export function apply(ctx: Context): void {
             if (query === undefined || typeof query.readSession !== 'function') return
             app.setTranscriptReader(async (sessionId) => reduceTranscript(await query.readSession(sessionId)))
             app.setMessageReader(async (sessionId) => reduceMessages(await query.readSession(sessionId)))
+          })
+
+          // The Workspace controller is optional: when it is absent the dispatcher
+          // falls back to headless sessions, so Mate still works in headless/CLI
+          // profiles. When present it lets dispatched sessions attach to the
+          // project's Workspace and appear in the sidebar.
+          ctx.inject(['workspaceController'], (workspaceScope) => {
+            const workspaceController = (workspaceScope as unknown as { get(name: string): unknown }).get('workspaceController') as
+              WorkspaceControllerLike | undefined
+            if (workspaceController === undefined) return
+            app.setWorkspaceController(workspaceController)
           })
 
           // The api-session events are declared by the shipped session-controller

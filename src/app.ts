@@ -1,6 +1,10 @@
 import type { MateAnalyzer, ProjectOption } from './analyzer.js'
-import { Dispatcher, type SessionControllerLike, type SessionSummaryLike } from './dispatch.js'
+import { Dispatcher, type SessionControllerLike, type SessionSummaryLike, type WorkspaceControllerLike } from './dispatch.js'
 import { newMateId, newRequirementId, type MateStore } from './store.js'
+import { planAnalysisOutcome, projectSourceOf, resolveDispatchProject } from './planning.js'
+import { isDirectory, normalizeProjectPath } from './projects.js'
+import type { ProjectRecord } from './domain.js'
+import { createRequire } from 'node:module'
 import {
   COMMANDS,
   isTerminal,
@@ -11,7 +15,8 @@ import {
   type MateView,
   type ModelSelection,
   type PlanView,
-  type RequirementStatus,
+  type ProjectResolution,
+  type ProjectSource,
   type RequirementView,
   type SessionTranscriptMessage,
   type SessionTranscriptView,
@@ -31,6 +36,7 @@ export interface AppDeps {
   controller: SessionControllerLike
   analyzer: MateAnalyzer | null
   transcript: ((sessionId: string) => Promise<string>) | null
+  workspaceController: WorkspaceControllerLike | null
   log: (message: string) => void
 }
 
@@ -44,9 +50,21 @@ export class MateApp {
   private readonly requestCache = new Map<string, unknown>()
   private queue: Promise<unknown> = Promise.resolve()
   private readonly dispatcher: Dispatcher
+  private workspaceController: WorkspaceControllerLike | null
 
   constructor(private readonly deps: AppDeps) {
-    this.dispatcher = new Dispatcher(deps.controller, this.lifetime.signal)
+    this.workspaceController = deps.workspaceController
+    this.dispatcher = new Dispatcher(
+      deps.controller,
+      () => this.workspaceController,
+      deps.log,
+      this.lifetime.signal,
+    )
+  }
+
+  /** Wire the optional Workspace controller once the Host has resolved it. */
+  setWorkspaceController(controller: WorkspaceControllerLike | null): void {
+    this.workspaceController = controller
   }
 
   /** One signal for every controller call, so disposal can abort in-flight work. */
@@ -125,6 +143,9 @@ export class MateApp {
       case COMMANDS.requirementAddChild: return this.addChild(args)
       case COMMANDS.requirementDelete: return this.deleteRequirement(args)
       case COMMANDS.requirementAdoptSession: return this.adoptSession(args)
+      case COMMANDS.requirementResolveProject: return this.resolveProject(args)
+      case COMMANDS.projectRegister: return this.registerProject(args)
+      case COMMANDS.projectPickDirectory: return this.pickDirectory()
       case COMMANDS.sessionHide: return this.hideSession(args)
       case COMMANDS.sessionTranscript: return this.sessionTranscript(args)
       case COMMANDS.mateCreate: return this.createMate(args)
@@ -231,7 +252,22 @@ export class MateApp {
       ? args.mateId
       : settings.defaultMateId ?? this.deps.store.listMates().find((candidate) => !candidate.archived)?.id
     const mate = this.requireMate(mateId)
-    const projectPath = optionalString(args.projectPath) || this.defaultProjectPath()
+
+    const projectSource = parseProjectSource(args.projectSource)
+    let projectPath = ''
+    let projectTitle = ''
+    if (projectSource !== 'auto') {
+      const normalized = normalizeProjectPath(optionalString(args.projectPath))
+      if (!normalized.ok) throw new CommandError(normalized.error!.code, normalized.error!.message)
+      if (!isDirectory(normalized.path)) {
+        throw new CommandError('project-not-found', `Project directory does not exist: ${normalized.path}`)
+      }
+      projectPath = normalized.path
+      projectTitle = optionalString(args.projectTitle) || baseName(projectPath)
+      await this.deps.store.registerProject(projectPath, projectTitle)
+      await this.deps.store.updateSettings({ lastProjectPath: projectPath })
+    }
+
     const now = Date.now()
     const requirement: RequirementView = {
       id: newRequirementId(),
@@ -239,7 +275,7 @@ export class MateApp {
       title,
       brief: brief.slice(0, 20000),
       projectPath,
-      projectTitle: optionalString(args.projectTitle) || baseName(projectPath),
+      projectTitle,
       priority: 'normal',
       mateId: mate.id,
       mateName: mate.name,
@@ -249,6 +285,8 @@ export class MateApp {
       status: 'draft',
       autonomy: parseAutonomy(args.autonomy) ?? mate.autonomy,
       sessionOverrides: null,
+      projectSource,
+      projectResolution: null,
       discussion: [],
       analysis: null,
       plan: null,
@@ -318,8 +356,7 @@ export class MateApp {
     }
     const plan: PlanView = {
       targetProjectPath: optionalString(args.targetProjectPath)
-        || requirement.analysis?.suggestedProjectPath
-        || requirement.projectPath,
+        || resolveDispatchProject(requirement),
       dispatchMode: args.dispatchMode === 'reuse-idle' ? 'reuse-idle' : 'new',
       extraInstruction: optionalString(args.extraInstruction).slice(0, 4000),
       at: Date.now(),
@@ -474,6 +511,54 @@ export class MateApp {
     return this.splitRequirement({ id: args.id, items })
   }
 
+  /** Settle a manual-vs-suggested project conflict and dispatch. */
+  private async resolveProject(args: Record<string, unknown>): Promise<RequirementView> {
+    const id = requiredString(args.id, 'id-required', 'Requirement id is required')
+    const choice: ProjectResolution = args.choice === 'mate' ? 'mate' : 'user'
+    const requirement = this.requireRequirement(id)
+    if (requirement.status !== 'conflict') {
+      throw new CommandError('invalid-state', `cannot resolve the project for a requirement in status ${requirement.status}`)
+    }
+    const next = await this.deps.store.mutateRequirement(id, (current) => ({
+      ...current,
+      projectResolution: choice,
+      status: 'approved',
+    }))
+    this.scheduleDispatch(id)
+    return next
+  }
+
+  /** Register a directory the user typed/picked into the project list. */
+  private async registerProject(args: Record<string, unknown>): Promise<ProjectRecord> {
+    const normalized = normalizeProjectPath(optionalString(args.path))
+    if (!normalized.ok) throw new CommandError(normalized.error!.code, normalized.error!.message)
+    if (!isDirectory(normalized.path)) {
+      throw new CommandError('project-not-found', `Project directory does not exist: ${normalized.path}`)
+    }
+    const title = optionalString(args.title) || baseName(normalized.path)
+    return this.deps.store.registerProject(normalized.path, title)
+  }
+
+  /** Open a native directory dialog (Electron) and register the chosen path. */
+  private async pickDirectory(): Promise<{ path: string | null; project: ProjectRecord | null }> {
+    const dialog = electronDialog()
+    if (dialog === null) {
+      throw new CommandError('dialog-unavailable', 'The native directory dialog is unavailable here; enter a path manually')
+    }
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    const path = Array.isArray(result?.filePaths) && result.filePaths.length > 0
+      ? String(result.filePaths[0])
+      : ''
+    if (path.length === 0) return { path: null, project: null }
+    const normalized = normalizeProjectPath(path)
+    if (!normalized.ok) throw new CommandError(normalized.error!.code, normalized.error!.message)
+    if (!isDirectory(normalized.path)) {
+      throw new CommandError('project-not-found', `Project directory does not exist: ${normalized.path}`)
+    }
+    const project = await this.deps.store.registerProject(normalized.path, baseName(normalized.path))
+    return { path: normalized.path, project }
+  }
+
   private async updateSettings(args: Record<string, unknown>): Promise<SettingsView> {
     const patch: Record<string, unknown> = {}
     if (args.defaultMateId !== undefined) {
@@ -491,6 +576,7 @@ export class MateApp {
       reuseIdleSession: settings.reuseIdleSession,
       version: PLUGIN_VERSION,
       lastStartedAt: settings.lastStartedAt ?? null,
+      lastProjectPath: settings.lastProjectPath ?? null,
       modelCatalog: this.cachedCatalog,
     }
   }
@@ -543,11 +629,15 @@ export class MateApp {
       const auto = requirement.autonomy === 'auto'
       const analysis = output.analysis
       const questions = analysis.questions
+      const outcome = planAnalysisOutcome({
+        projectSource: requirement.projectSource,
+        projectPath: requirement.projectPath,
+        projectResolution: requirement.projectResolution,
+        autonomy: requirement.autonomy,
+        analysis,
+      })
       // The Mate owns the decision now: no confidence threshold and no manual
       // confirm gate unless this requirement or its Mate is set to confirm.
-      const status: RequirementStatus = auto
-        ? (analysis.needsClarification ? 'clarifying' : 'approved')
-        : 'proposed'
       const discussion = auto && analysis.needsClarification && questions.length > 0
         ? [...requirement.discussion, {
           role: 'mate' as const,
@@ -560,16 +650,31 @@ export class MateApp {
         ? analysis.title.slice(0, 80)
         : requirement.title
       const priority = analysis.priority ?? requirement.priority
+      // In auto mode the card's project follows the Mate's suggestion; a manual
+      // selection is left untouched so the conflict resolution can tell them apart.
+      const source = projectSourceOf(requirement.projectSource)
+      const resolvedProjectPath = source === 'auto' && analysis.suggestedProjectPath
+        ? analysis.suggestedProjectPath
+        : requirement.projectPath
+      const resolvedProjectTitle = resolvedProjectPath === requirement.projectPath
+        ? requirement.projectTitle
+        : (resolvedProjectPath ? baseName(resolvedProjectPath) : requirement.projectTitle)
+      if (source === 'auto' && analysis.suggestedProjectPath) {
+        await this.deps.store.rememberProject(analysis.suggestedProjectPath, baseName(analysis.suggestedProjectPath))
+      }
       await this.deps.store.mutateRequirement(id, (current) => ({
         ...current,
         title,
         priority,
         analysis,
-        status,
+        status: outcome.status,
+        projectResolution: outcome.projectResolution,
+        projectPath: resolvedProjectPath,
+        projectTitle: resolvedProjectTitle,
         discussion,
         errors: current.errors.filter((error) => error.phase !== 'analyze'),
       }))
-      if (status === 'approved') this.scheduleDispatch(id)
+      if (outcome.status === 'approved') this.scheduleDispatch(id)
     } catch (error) {
       await this.failRequirement(id, 'analyze', error)
     }
@@ -584,9 +689,7 @@ export class MateApp {
       await this.failRequirement(id, 'dispatch', new CommandError('mate-missing', 'the requirement Mate no longer exists'))
       return
     }
-    const projectPath = requirement.plan?.targetProjectPath
-      || requirement.analysis?.suggestedProjectPath
-      || requirement.projectPath
+    const projectPath = resolveDispatchProject(requirement)
     if (!projectPath) {
       await this.failRequirement(id, 'dispatch', new CommandError('project-required', 'no target project is known for this requirement'))
       return
@@ -750,11 +853,6 @@ export class MateApp {
     const requirement = this.deps.store.getRequirement(id)
     if (requirement === undefined) throw new CommandError('requirement-not-found', `Requirement not found: ${id}`)
     return requirement
-  }
-
-  private defaultProjectPath(): string {
-    const first = this.deps.store.storedProjects()[0]
-    return first?.path ?? ''
   }
 
   private async listLive() {
@@ -964,6 +1062,23 @@ function parseAutonomy(value: unknown): AutonomyMode | null {
 
 function parsePriority(value: unknown): RequirementView['priority'] {
   return value === 'low' || value === 'high' ? value : 'normal'
+}
+
+function parseProjectSource(value: unknown): ProjectSource {
+  return value === 'user' ? 'user' : value === 'user-new' ? 'user-new' : 'auto'
+}
+
+/** Best-effort native dialog handle; null when Electron is unavailable. */
+function electronDialog(): { showOpenDialog(options: Record<string, unknown>): Promise<{ filePaths?: string[] }> } | null {
+  try {
+    const require = createRequire(import.meta.url)
+    const electron = require('electron') as { dialog?: unknown } | undefined
+    const dialog = electron?.dialog as { showOpenDialog?: unknown } | undefined
+    if (dialog === undefined || typeof dialog.showOpenDialog !== 'function') return null
+    return dialog as { showOpenDialog(options: Record<string, unknown>): Promise<{ filePaths?: string[] }> }
+  } catch {
+    return null
+  }
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
