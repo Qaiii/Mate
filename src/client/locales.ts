@@ -119,6 +119,12 @@ const ZH: Record<string, string> = {
   'mate.memoryHint': '你告诉 Mate 的要求，它会理解后写进记忆，之后每次分析都会带上。',
   'mate.memoryAfterSave': '保存后可以在这里教它、查看它的记忆。',
   'mate.memoryEmpty': '还没有记忆。在下面告诉它你的要求、限制或偏好。',
+  'mate.proposalTitle': 'Mate 理解为以下记忆，确认后写入',
+  'mate.proposalEmpty': '没有提炼出可记的内容，换个说法再试。',
+  'mate.proposalNothingNew': '没有新的记忆（都已记住）。',
+  'memory.new': '新增',
+  'memory.existing': '已在记忆中',
+  'action.applyRemember': '写入记忆',
   'mate.teachPlaceholder': '例如：这个项目只允许改 apps/web；回复我时先给结论；我们内部把「吐司」叫 toast。',
   'action.remember': '让 Mate 记住',
   'action.forget': '忘记',
@@ -313,6 +319,12 @@ const EN: Record<string, string> = {
   'mate.memoryHint': 'What you tell the Mate is understood and written into its memory, used by every later analysis.',
   'mate.memoryAfterSave': 'Save first, then teach it and review its memory here.',
   'mate.memoryEmpty': 'No memory yet. Tell it your requirements, limits or preferences below.',
+  'mate.proposalTitle': 'The Mate understood these memory entries; confirm to write them',
+  'mate.proposalEmpty': 'Nothing worth remembering was found; try rephrasing.',
+  'mate.proposalNothingNew': 'No new memory (everything is already stored).',
+  'memory.new': 'new',
+  'memory.existing': 'already stored',
+  'action.applyRemember': 'Write to memory',
   'mate.teachPlaceholder': 'e.g. only touch apps/web in this project; lead with the conclusion; we call the toast a "snack".',
   'action.remember': 'Remember this',
   'action.forget': 'Forget',
@@ -403,6 +415,8 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
+
 
 
 

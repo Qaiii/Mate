@@ -1,5 +1,5 @@
 import React from 'react'
-import { COMMANDS, type MateView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
+import { COMMANDS, type MateDistillView, type MateMemoryKind, type MateView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
 import type { Translator } from './locales.js'
 import type { MateController } from './controller.js'
 import { projectLabel } from './types.js'
@@ -248,7 +248,7 @@ export interface MatePayload {
 }
 
 /** Mate identity is the name it displays and answers as; the model is one pick. */
-export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onTeach, onForget }: {
+export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onDistill, onRemember, onForget }: {
   mate: MateView | null
   snapshot: Snapshot | null
   t: Translator
@@ -256,7 +256,8 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   onClose: () => void
   onSubmit: (payload: MatePayload) => Promise<boolean> | void
   onDelete: (mate: MateView) => void | Promise<void>
-  onTeach: (text: string) => Promise<MateView | null>
+  onDistill: (text: string) => Promise<MateDistillView | null>
+  onRemember: (entries: Array<{ kind: MateMemoryKind; text: string }>) => Promise<MateView | null>
   onForget: (entryId: string) => Promise<MateView | null>
 }): React.ReactElement {
   const catalog = snapshot?.settings.modelCatalog ?? []
@@ -274,6 +275,8 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   const [memory, setMemory] = React.useState(mate?.memory ?? [])
   const [teachText, setTeachText] = React.useState('')
   const [memoryBusy, setMemoryBusy] = React.useState(false)
+  const [proposal, setProposal] = React.useState<MateDistillView['entries'] | null>(null)
+  const proposalRef = React.useRef<HTMLDivElement | null>(null)
   const selected = options.find((option) => option.key === modelKey)
   const legacyKey = mate !== null && selected === undefined ? initialKey : null
 
@@ -289,14 +292,30 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     })
   }
 
+  React.useEffect(() => {
+    if (proposal !== null) proposalRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [proposal])
+
   const teach = async (): Promise<void> => {
     const text = teachText.trim()
     if (text.length === 0 || mate === null || memoryBusy) return
     setMemoryBusy(true)
     try {
-      const updated = await onTeach(text)
+      const distilled = await onDistill(text)
+      if (distilled !== null) setProposal(distilled.entries)
+    } finally {
+      setMemoryBusy(false)
+    }
+  }
+
+  const remember = async (): Promise<void> => {
+    if (mate === null || proposal === null || memoryBusy) return
+    setMemoryBusy(true)
+    try {
+      const updated = await onRemember(proposal.filter((entry) => !entry.existing))
       if (updated !== null) {
         setMemory(updated.memory ?? [])
+        setProposal(null)
         setTeachText('')
       }
     } finally {
@@ -403,6 +422,45 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
                 {t('action.remember')}
               </Button>
             </div>
+
+            {proposal !== null ? (
+              <div ref={proposalRef} className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="mate-row-title">{t('mate.proposalTitle')}</div>
+                {proposal.length === 0 ? (
+                  <div className="mate-sub">{t('mate.proposalEmpty')}</div>
+                ) : (
+                  proposal.map((entry, index) => (
+                    <div key={index} className="mate-row" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+                      <span className="mate-row-main">
+                        <span className="mate-row-title" style={{ whiteSpace: 'normal' }}>
+                          <Badge>{t(`memory.kind.${entry.kind}`)}</Badge>{' '}
+                          <Badge tone={entry.existing ? 'goal' : 'confirm'}>
+                            {entry.existing ? t('memory.existing') : t('memory.new')}
+                          </Badge>{' '}
+                          {entry.text}
+                        </span>
+                      </span>
+                    </div>
+                  ))
+                )}
+                {proposal.length > 0 && proposal.every((entry) => entry.existing) ? (
+                  <div className="mate-sub">{t('mate.proposalNothingNew')}</div>
+                ) : null}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    variant="primary"
+                    busy={memoryBusy}
+                    disabled={proposal.every((entry) => entry.existing)}
+                    onClick={() => { void remember() }}
+                  >
+                    {t('action.applyRemember')}
+                  </Button>
+                  <Button variant="ghost" disabled={memoryBusy} onClick={() => setProposal(null)}>
+                    {t('action.cancel')}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </Field>
@@ -491,5 +549,8 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
+
+
 
 

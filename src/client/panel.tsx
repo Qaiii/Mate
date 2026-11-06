@@ -1,5 +1,5 @@
 import React from 'react'
-import { COMMANDS, type LiveSessionView, type MateView, type RequirementStatus, type RequirementView, type Snapshot } from '../shared.js'
+import { COMMANDS, type LiveSessionView, type MateDistillView, type MateView, type RequirementStatus, type RequirementView, type Snapshot } from '../shared.js'
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
 import { SessionDrawer } from './sessionDrawer.js'
@@ -376,10 +376,15 @@ export function MatePanel(context: PanelContext): React.ReactElement {
             if (saved !== null) setMateEditor(null)
             return saved !== null
           }}
-          onTeach={async (text) => {
+          onDistill={async (text) => {
             const mate = mateEditor === 'new' ? null : mateEditor
             if (mate === null) return null
-            return controller.run<MateView>('mate.teach', COMMANDS.mateTeach, { id: mate.id, text })
+            return controller.run<MateDistillView>('mate.distill', COMMANDS.mateDistill, { id: mate.id, text })
+          }}
+          onRemember={async (entries) => {
+            const mate = mateEditor === 'new' ? null : mateEditor
+            if (mate === null) return null
+            return controller.run<MateView>('mate.remember', COMMANDS.mateRemember, { id: mate.id, entries })
           }}
           onForget={async (entryId) => {
             const mate = mateEditor === 'new' ? null : mateEditor
@@ -526,6 +531,8 @@ function SessionCard({ session, t, lang, onOpen }: {
     </button>
   )
 }
+
+
 
 
 

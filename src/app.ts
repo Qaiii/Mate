@@ -19,6 +19,7 @@ import {
   type ProjectResolution,
   type ProjectSource,
   type RequirementView,
+  type MateDistillView,
   type MateMemoryEntry,
   type SessionTranscriptMessage,
   type SessionTranscriptView,
@@ -154,7 +155,8 @@ export class MateApp {
       case COMMANDS.mateUpdate: return this.updateMate(args)
       case COMMANDS.mateArchive: return this.archiveMate(args)
       case COMMANDS.mateDelete: return this.deleteMate(args)
-      case COMMANDS.mateTeach: return this.teachMate(args)
+      case COMMANDS.mateDistill: return this.distillMate(args)
+      case COMMANDS.mateRemember: return this.rememberMemory(args)
       case COMMANDS.mateForget: return this.forgetMemory(args)
       case COMMANDS.settingsUpdate: return this.updateSettings(args)
       default: throw new CommandError('unknown-command', `unknown command: ${request.command}`)
@@ -245,8 +247,8 @@ export class MateApp {
     return { deleted: true }
   }
 
-  /** Distill the user's instruction into this Mate's durable memory. */
-  private async teachMate(args: Record<string, unknown>): Promise<MateView> {
+  /** Let the Mate read the instruction and show what it would remember. */
+  private async distillMate(args: Record<string, unknown>): Promise<MateDistillView> {
     const mate = this.requireMate(args.id)
     const text = requiredString(args.text, 'text-required', 'Tell the Mate what it should remember')
     if (this.deps.analyzer === null) {
@@ -258,7 +260,24 @@ export class MateApp {
       language: this.language,
       maxTokens: 1200,
     })
-    const memory = mergeMemory(mate.memory ?? [], output.entries)
+    const known = new Set((mate.memory ?? []).map((entry) => entry.text.trim().toLowerCase()))
+    return { entries: output.entries.map((entry) => ({ ...entry, existing: known.has(entry.text.trim().toLowerCase()) })) }
+  }
+
+  /** Persist the entries the user approved after reading them. */
+  private async rememberMemory(args: Record<string, unknown>): Promise<MateView> {
+    const mate = this.requireMate(args.id)
+    const raw = Array.isArray(args.entries) ? args.entries : []
+    const kinds: Array<MateMemoryEntry['kind']> = ['role', 'constraint', 'preference', 'glossary', 'note']
+    const entries = raw.flatMap((item) => {
+      if (item === null || typeof item !== 'object') return []
+      const record = item as Record<string, unknown>
+      const kind = kinds.find((candidate) => candidate === record.kind)
+      const text = typeof record.text === 'string' ? record.text.trim() : ''
+      if (kind === undefined || text.length === 0) return []
+      return [{ kind, text: text.slice(0, 500) }]
+    })
+    const memory = mergeMemory(mate.memory ?? [], entries)
     return this.deps.store.putMate({ ...mate, memory, updatedAt: Date.now() })
   }
 
@@ -1130,6 +1149,9 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
+
+
 
 
 

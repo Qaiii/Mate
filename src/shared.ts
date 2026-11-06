@@ -58,6 +58,10 @@ export interface MateView {
   archived: boolean
 }
 
+export interface MateDistillView {
+  entries: Array<{ kind: MateMemoryKind; text: string; existing: boolean }>
+}
+
 export interface SubTaskView {
   id: string
   title: string
@@ -281,7 +285,8 @@ export const COMMANDS = {
   mateUpdate: 'mate.update',
   mateArchive: 'mate.archive',
   mateDelete: 'mate.delete',
-  mateTeach: 'mate.teach',
+  mateDistill: 'mate.distill',
+  mateRemember: 'mate.remember',
   mateForget: 'mate.forget',
   settingsUpdate: 'settings.update',
 } as const
@@ -307,5 +312,7 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+
+
 
 
