@@ -372,24 +372,16 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           }}
           onSubmit={async (payload) => {
             const isNew = mateEditor === 'new'
-            const saved = await controller.run<MateView>('mate.save', isNew ? COMMANDS.mateCreate : COMMANDS.mateUpdate, payload)
-            if (saved !== null) setMateEditor(null)
-            return saved !== null
+            return controller.run<MateView>('mate.save', isNew ? COMMANDS.mateCreate : COMMANDS.mateUpdate, payload)
           }}
-          onDistill={async (text) => {
-            const mate = mateEditor === 'new' ? null : mateEditor
-            if (mate === null) return null
-            return controller.run<MateDistillView>('mate.distill', COMMANDS.mateDistill, { id: mate.id, text })
+          onDistill={async (mateId, text) => {
+            return controller.run<MateDistillView>('mate.distill', COMMANDS.mateDistill, { id: mateId, text })
           }}
-          onRemember={async (entries) => {
-            const mate = mateEditor === 'new' ? null : mateEditor
-            if (mate === null) return null
-            return controller.run<MateView>('mate.remember', COMMANDS.mateRemember, { id: mate.id, entries })
+          onRemember={async (mateId, entries) => {
+            return controller.run<MateView>('mate.remember', COMMANDS.mateRemember, { id: mateId, entries })
           }}
-          onForget={async (entryId) => {
-            const mate = mateEditor === 'new' ? null : mateEditor
-            if (mate === null) return null
-            return controller.run<MateView>('mate.forget', COMMANDS.mateForget, { id: mate.id, entryId })
+          onForget={async (mateId, entryId) => {
+            return controller.run<MateView>('mate.forget', COMMANDS.mateForget, { id: mateId, entryId })
           }}
           onEfforts={async (provider, model) => {
             return controller.run<ModelEffortsView>('model.efforts', COMMANDS.modelEfforts, { provider, model })

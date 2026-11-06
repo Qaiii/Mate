@@ -217,6 +217,8 @@ export interface MatePayload {
   name: string
   model: ModelSelection
   autonomy: 'confirm' | 'auto'
+  /** Instruct the Mate at creation time; it is distilled into memory then. */
+  memoryText?: string
 }
 
 /** Mate identity is the name it displays and answers as; the model is one pick. */
@@ -226,11 +228,11 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   t: Translator
   busy: boolean
   onClose: () => void
-  onSubmit: (payload: MatePayload) => Promise<boolean> | void
+  onSubmit: (payload: MatePayload) => Promise<MateView | null>
   onDelete: (mate: MateView) => void | Promise<void>
-  onDistill: (text: string) => Promise<MateDistillView | null>
-  onRemember: (entries: Array<{ kind: MateMemoryKind; text: string }>) => Promise<MateView | null>
-  onForget: (entryId: string) => Promise<MateView | null>
+  onDistill: (mateId: string, text: string) => Promise<MateDistillView | null>
+  onRemember: (mateId: string, entries: Array<{ kind: MateMemoryKind; text: string }>) => Promise<MateView | null>
+  onForget: (mateId: string, entryId: string) => Promise<MateView | null>
   onEfforts: (provider: string, model: string) => Promise<ModelEffortsView | null>
 }): React.ReactElement {
   const catalog = snapshot?.settings.modelCatalog ?? []
@@ -249,6 +251,7 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   const [teachText, setTeachText] = React.useState('')
   const [memoryBusy, setMemoryBusy] = React.useState(false)
   const [proposal, setProposal] = React.useState<MateDistillView['entries'] | null>(null)
+  const [created, setCreated] = React.useState<MateView | null>(null)
   const [effort, setEffort] = React.useState(mate?.model.reasoningEffort ?? '')
   const [efforts, setEfforts] = React.useState<ModelEffortsView['efforts']>([])
   const [effortsLoading, setEffortsLoading] = React.useState(false)
@@ -256,12 +259,14 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   const selected = options.find((option) => option.key === modelKey)
   const legacyKey = mate !== null && selected === undefined ? initialKey : null
   const [modelProvider, modelId] = modelKey.split('|')
+  const effective = mate ?? created
+  const effectiveId = effective?.id ?? null
 
   const submit = async (): Promise<void> => {
     const trimmed = name.trim()
     if (trimmed.length === 0 || modelKey.length === 0) return
     const [selectedProvider, selectedModel] = modelKey.split('|')
-    await onSubmit({
+    const saved = await onSubmit({
       ...(mate === null ? {} : { id: mate.id }),
       name: trimmed,
       model: {
@@ -270,7 +275,29 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
         ...(effort.length > 0 ? { reasoningEffort: effort } : {}),
       },
       autonomy,
+      ...(mate === null && teachText.trim().length > 0 ? { memoryText: teachText.trim() } : {}),
     })
+    if (saved === null) return
+    if (mate !== null) {
+      onClose()
+      return
+    }
+    // Creation succeeded: keep the dialog open so the first memory can be
+    // reviewed and written before it closes.
+    setCreated(saved)
+    const instruction = teachText.trim()
+    if (instruction.length === 0) {
+      onClose()
+      return
+    }
+    setMemoryBusy(true)
+    try {
+      const distilled = await onDistill(saved.id, instruction)
+      setProposal(distilled?.entries ?? [])
+      setTeachText('')
+    } finally {
+      setMemoryBusy(false)
+    }
   }
 
   React.useEffect(() => {
@@ -296,10 +323,10 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
 
   const teach = async (): Promise<void> => {
     const text = teachText.trim()
-    if (text.length === 0 || mate === null || memoryBusy) return
+    if (text.length === 0 || effectiveId === null || memoryBusy) return
     setMemoryBusy(true)
     try {
-      const distilled = await onDistill(text)
+      const distilled = await onDistill(effectiveId, text)
       if (distilled !== null) setProposal(distilled.entries)
     } finally {
       setMemoryBusy(false)
@@ -307,14 +334,15 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   }
 
   const remember = async (): Promise<void> => {
-    if (mate === null || proposal === null || memoryBusy) return
+    if (effectiveId === null || proposal === null || memoryBusy) return
     setMemoryBusy(true)
     try {
-      const updated = await onRemember(proposal.filter((entry) => !entry.existing))
+      const updated = await onRemember(effectiveId, proposal.filter((entry) => !entry.existing))
       if (updated !== null) {
         setMemory(updated.memory ?? [])
         setProposal(null)
         setTeachText('')
+        if (mate === null) onClose()
       }
     } finally {
       setMemoryBusy(false)
@@ -322,10 +350,10 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   }
 
   const forget = async (entryId: string): Promise<void> => {
-    if (mate === null || memoryBusy) return
+    if (effectiveId === null || memoryBusy) return
     setMemoryBusy(true)
     try {
-      const updated = await onForget(entryId)
+      const updated = await onForget(effectiveId, entryId)
       if (updated !== null) setMemory(updated.memory ?? [])
     } finally {
       setMemoryBusy(false)
@@ -351,7 +379,7 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
           <Button
             variant="primary"
             busy={busy}
-            disabled={name.trim().length === 0 || modelKey.length === 0}
+            disabled={created !== null || name.trim().length === 0 || modelKey.length === 0}
             onClick={() => { void submit() }}
           >
             {t('action.save')}
@@ -392,8 +420,19 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
         </select>
       </Field>
 
-      <Field label={t('mate.memoryTitle')} hint={mate === null ? t('mate.memoryAfterSave') : t('mate.memoryHint')}>
-        {mate === null ? null : (
+      <Field label={t('mate.memoryTitle')} hint={effective === null ? t('mate.memoryCreateHint') : t('mate.memoryHint')}>
+        {effective === null ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <textarea
+              className="mate-textarea"
+              style={{ minHeight: 84 }}
+              value={teachText}
+              placeholder={t('mate.teachPlaceholder')}
+              onChange={(event) => setTeachText(event.target.value)}
+            />
+            <div className="mate-sub">{t('mate.memoryCreateNote')}</div>
+          </div>
+        ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {memory.length === 0 ? (
               <div className="mate-sub">{t('mate.memoryEmpty')}</div>
@@ -462,7 +501,10 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
                   >
                     {t('action.applyRemember')}
                   </Button>
-                  <Button variant="ghost" disabled={memoryBusy} onClick={() => setProposal(null)}>
+                  <Button variant="ghost" disabled={memoryBusy} onClick={() => {
+                    setProposal(null)
+                    if (created !== null && mate === null) onClose()
+                  }}>
                     {t('action.cancel')}
                   </Button>
                 </div>

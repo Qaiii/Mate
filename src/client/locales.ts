@@ -117,6 +117,8 @@ const ZH: Record<string, string> = {
   'mate.specialty': '擅长什么',
   'mate.memoryTitle': '记忆',
   'mate.memoryHint': '你告诉 Mate 的要求，它会理解后写进记忆，之后每次分析都会带上。',
+  'mate.memoryCreateHint': '写下它的角色、限制或偏好；保存时 Mate 会理解并写进记忆。',
+  'mate.memoryCreateNote': '点「保存」后，Mate 会先把这段话提炼成记忆条目给你确认。',
   'mate.memoryAfterSave': '保存后可以在这里教它、查看它的记忆。',
   'mate.memoryEmpty': '还没有记忆。在下面告诉它你的要求、限制或偏好。',
   'mate.proposalTitle': 'Mate 理解为以下记忆，确认后写入',
@@ -318,6 +320,8 @@ const EN: Record<string, string> = {
   'mate.specialty': 'Specialty',
   'mate.memoryTitle': 'Memory',
   'mate.memoryHint': 'What you tell the Mate is understood and written into its memory, used by every later analysis.',
+  'mate.memoryCreateHint': 'Describe its role, limits or preferences; the Mate distils this into memory when you save.',
+  'mate.memoryCreateNote': 'After Save, the Mate shows what it understood as memory entries for you to confirm.',
   'mate.memoryAfterSave': 'Save first, then teach it and review its memory here.',
   'mate.memoryEmpty': 'No memory yet. Tell it your requirements, limits or preferences below.',
   'mate.proposalTitle': 'The Mate understood these memory entries; confirm to write them',
@@ -417,6 +421,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 
