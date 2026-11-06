@@ -35,7 +35,9 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
   const analysis = requirement.analysis
   const result = requirement.result
   const children = snapshot.requirements.filter((item) => item.parentId === requirement.id)
-  const canConfirm = requirement.status === 'proposed' || requirement.status === 'clarifying' || requirement.status === 'failed'
+  // Only a confirm-mode requirement needs the user's gate; auto-mode Mates dispatch themselves.
+  const canConfirm = requirement.autonomy === 'confirm'
+    && (requirement.status === 'proposed' || requirement.status === 'clarifying' || requirement.status === 'failed')
   const canReview = requirement.status === 'awaiting_review'
 
   const run = (key: string, command: string, args: Record<string, unknown>): void => {
@@ -395,3 +397,4 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
     </div>
   )
 }
+

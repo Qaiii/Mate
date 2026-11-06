@@ -215,8 +215,9 @@ export class MateApp {
   // --------------------------------------------------------- requirements
 
   private async createRequirement(args: Record<string, unknown>): Promise<RequirementView> {
-    const title = requiredString(args.title, 'title-required', 'Title is required').slice(0, 200)
-    const brief = requiredString(args.brief, 'brief-required', 'Description is required')
+    // One input is enough: the body is the requirement, the Mate names the card.
+    const brief = requiredString(args.brief, 'brief-required', 'A requirement is required')
+    const title = optionalString(args.title).slice(0, 200) || firstLineTitle(brief)
     const settings = this.deps.store.settings()
     const mateId = typeof args.mateId === 'string' && args.mateId.length > 0
       ? args.mateId
@@ -231,7 +232,7 @@ export class MateApp {
       brief: brief.slice(0, 20000),
       projectPath,
       projectTitle: optionalString(args.projectTitle) || baseName(projectPath),
-      priority: parsePriority(args.priority),
+      priority: 'normal',
       mateId: mate.id,
       mateName: mate.name,
       mateModel: `${mate.model.provider}/${mate.model.model}`,
@@ -239,7 +240,7 @@ export class MateApp {
       kind: 'requirement',
       status: 'draft',
       autonomy: parseAutonomy(args.autonomy) ?? mate.autonomy,
-      sessionOverrides: parseModel(args.sessionOverrides),
+      sessionOverrides: null,
       discussion: [],
       analysis: null,
       plan: null,
@@ -527,16 +528,17 @@ export class MateApp {
         requirement,
         mate,
         projects,
+        models: this.cachedCatalog,
         language: this.language,
         maxTokens: DEFAULT_TARGETS.analysis,
       })
       const auto = requirement.autonomy === 'auto'
       const analysis = output.analysis
       const questions = analysis.questions
+      // The Mate owns the decision now: no confidence threshold and no manual
+      // confirm gate unless this requirement or its Mate is set to confirm.
       const status: RequirementStatus = auto
-        ? (analysis.needsClarification
-          ? 'clarifying'
-          : (analysis.confidence >= mate.confidenceThreshold ? 'approved' : 'proposed'))
+        ? (analysis.needsClarification ? 'clarifying' : 'approved')
         : 'proposed'
       const discussion = auto && analysis.needsClarification && questions.length > 0
         ? [...requirement.discussion, {
@@ -546,8 +548,12 @@ export class MateApp {
           model: mate.model.model,
         }]
         : requirement.discussion
+      const title = analysis.title !== undefined && analysis.title.length > 0
+        ? analysis.title.slice(0, 80)
+        : requirement.title
       await this.deps.store.mutateRequirement(id, (current) => ({
         ...current,
+        title,
         analysis,
         status,
         discussion,
@@ -568,12 +574,6 @@ export class MateApp {
       await this.failRequirement(id, 'dispatch', new CommandError('mate-missing', 'the requirement Mate no longer exists'))
       return
     }
-    const running = this.deps.store.listRequirements()
-      .filter((item) => item.mateId === mate.id && item.status === 'running').length
-    if (running >= mate.maxParallel) {
-      // Leave it approved; the monitor retries when a sibling finishes.
-      return
-    }
     const projectPath = requirement.plan?.targetProjectPath
       || requirement.analysis?.suggestedProjectPath
       || requirement.projectPath
@@ -581,8 +581,10 @@ export class MateApp {
       await this.failRequirement(id, 'dispatch', new CommandError('project-required', 'no target project is known for this requirement'))
       return
     }
+    // The Mate picked the session model during analysis; the user never sets it.
+    const model = requirement.sessionOverrides ?? requirement.analysis?.sessionModel ?? null
     try {
-      const outcome = await this.dispatcher.dispatch(requirement, mate, projectPath)
+      const outcome = await this.dispatcher.dispatch(requirement, mate, projectPath, model)
       const now = Date.now()
       await this.deps.store.mutateRequirement(id, (current) => ({
         ...current,
@@ -881,6 +883,12 @@ function baseName(path: string): string {
   if (!path) return ''
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
   return normalized.split('/').pop() ?? path
+}
+
+/** First meaningful line of a requirement body, used until the Mate names it. */
+function firstLineTitle(brief: string): string {
+  const line = brief.split(/\r?\n/).map((part) => part.trim()).find((part) => part.length > 0) ?? brief.trim()
+  return line.length > 80 ? `${line.slice(0, 80)}…` : line
 }
 
 function requiredString(value: unknown, code: string, message: string): string {

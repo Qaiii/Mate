@@ -95,11 +95,10 @@ export class Dispatcher {
     requirement: RequirementView,
     mate: MateView | undefined,
     projectPath: string,
+    model: ModelSelection | null,
   ): Promise<DispatchOutcome> {
     const warnings: DispatchWarning[] = []
-    const overrides: ModelSelection | null = requirement.sessionOverrides
-      ?? mate?.dispatchModel
-      ?? null
+    const overrides: ModelSelection | null = requirement.sessionOverrides ?? model ?? null
     const mode = requirement.plan?.dispatchMode ?? 'new'
 
     let sessionId: string | null = mode === 'reuse-idle' ? await this.findReusable(projectPath) : null

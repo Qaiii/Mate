@@ -55,6 +55,10 @@ export interface SplitItemView {
 export interface AnalysisView {
   provider?: string
   model?: string
+  /** Card title proposed by the Mate; the user only types the request body. */
+  title?: string
+  /** Model the Mate picked for the implementing session, or null for default. */
+  sessionModel?: ModelSelection | null
   summary: string
   confidence: number
   needsClarification: boolean

@@ -96,6 +96,20 @@ export const STYLES = `
 }
 .mate-textarea { resize: vertical; min-height: 84px; line-height: 1.55; }
 .mate-select { cursor: pointer; }
+.mate-projecttabs { display: flex; gap: 6px; overflow-x: auto; flex: none; padding-bottom: 2px; }
+.mate-projecttab {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3));
+  background: transparent; color: var(--dsw-alias-label-secondary, #4b5563);
+  font: inherit; font-size: 12.5px; white-space: nowrap;
+}
+.mate-projecttab.on {
+  border-color: var(--dsw-alias-state-business-primary, #247bbf);
+  color: var(--dsw-alias-label-primary, #0f1115);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #247bbf) 12%, transparent);
+  font-weight: 600;
+}
 .mate-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex: none; }
 .mate-filters .mate-select { width: auto; min-width: 130px; }
 .mate-filters .mate-input { width: 220px; }
@@ -140,6 +154,14 @@ export const STYLES = `
   border: 0; background: transparent; color: inherit; font: inherit; padding: 0; cursor: pointer;
 }
 .mate-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.mate-session-chip {
+  align-self: flex-start; padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3));
+  background: transparent; color: var(--dsw-alias-label-secondary, #4b5563);
+  font: inherit; font-size: 11px;
+}
+.mate-session-chip:hover { border-color: var(--dsw-alias-state-business-primary, #247bbf); color: var(--dsw-alias-label-primary, #0f1115); }
+.mate-row-session { border-style: dashed; }
 .mate-card-title { font-size: 13px; font-weight: 600; line-height: 1.42; }
 .mate-card-meta, .mate-card-foot { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; align-items: center; color: var(--dsw-alias-label-secondary, #4b5563); }
 
@@ -319,7 +341,8 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
       }
     }
     document.addEventListener('keydown', onKey, true)
-    const focusable = ref.current?.querySelector<HTMLElement>('input, textarea, select, button')
+    const focusable = ref.current?.querySelector<HTMLElement>('input, textarea, select')
+      ?? ref.current?.querySelector<HTMLElement>('button')
     focusable?.focus()
     return () => { document.removeEventListener('keydown', onKey, true) }
   }, [onClose])
@@ -337,6 +360,8 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
+
 
 
 

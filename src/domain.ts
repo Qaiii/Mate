@@ -70,6 +70,8 @@ const SplitItemSchema: z.ZodType<SplitItemView> = z.object({
 const AnalysisSchema: z.ZodType<AnalysisView> = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
+  title: z.string().optional(),
+  sessionModel: ModelSelectionSchema.nullable().optional(),
   summary: z.string(),
   confidence: z.number(),
   needsClarification: z.boolean(),

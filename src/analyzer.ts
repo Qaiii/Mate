@@ -31,6 +31,7 @@ export interface AnalyzeInput {
   requirement: Pick<RequirementView, 'title' | 'brief' | 'projectPath' | 'projectTitle' | 'discussion'>
   mate: MateView
   projects: ProjectOption[]
+  models: Array<{ provider: string; name: string; models: Array<{ id: string; name: string }> }>
   language: string
   maxTokens: number
   signal?: AbortSignal
@@ -59,6 +60,7 @@ export interface SummarizeOutput {
 
 const ANALYSIS_CONTRACT = `Return ONE JSON object and nothing else, with this exact shape:
 {
+  "title": "short requirement title in the user's language",
   "summary": "one paragraph in the user's language",
   "confidence": 0.0,
   "needsClarification": false,
@@ -66,14 +68,17 @@ const ANALYSIS_CONTRACT = `Return ONE JSON object and nothing else, with this ex
   "subTasks": [{ "title": "...", "detail": "how to do it", "acceptance": "how to verify" }],
   "risks": ["..."],
   "splitSuggestion": [{ "title": "...", "brief": "...", "acceptance": "..." }],
-  "suggestedProjectPath": null
+  "suggestedProjectPath": null,
+  "sessionModel": { "provider": "...", "model": "..." }
 }
 Rules:
+- "title" is a concise label (at most 40 characters) you would put on a card; never repeat the whole request.
 - "confidence" is your own 0..1 judgement that you fully understand the requirement and can dispatch it without asking anything.
-- Set "needsClarification" true and fill "questions" when the requirement leaves real decisions open; use the user's language.
+- Set "needsClarification" true and fill "questions" when the requirement leaves real decisions open; use the user's language. Ask only what actually blocks a correct dispatch.
 - "subTasks" are the concrete work items an implementing agent should do, 1-8 items, each with a verifiable acceptance point.
-- "splitSuggestion" is non-empty ONLY when the requirement is too large for one session; give 2-6 independent child requirements that could each be dispatched separately.
+- "splitSuggestion" is non-empty ONLY when the requirement is too large for one session; give 2-6 independent child requirements that could each be dispatched separately. You own this decision; the user does not configure it.
 - "suggestedProjectPath" must be one of the listed project paths, or null.
+- "sessionModel" is the model the implementing session should use, picked from the listed models, or null to keep the default. The user did not choose it; you decide.
 - Never wrap the JSON in markdown fences.`
 
 const SUMMARY_CONTRACT = `Return ONE JSON object and nothing else, with this exact shape:
@@ -96,6 +101,12 @@ function languageName(language: string): string {
 function projectsBlock(projects: ProjectOption[]): string {
   if (projects.length === 0) return '(no projects are currently registered)'
   return projects.slice(0, 40).map((project) => `- ${project.path}  (${project.title})`).join('\n')
+}
+
+function modelsBlock(models: AnalyzeInput['models']): string {
+  if (models.length === 0) return '(no model catalog is available)'
+  return models.map((group) =>
+    `${group.provider} (${group.name}): ${group.models.map((model) => model.id).join(', ')}`).join('\n')
 }
 
 function clip(text: string, limit: number): string {
@@ -171,9 +182,21 @@ export function normalizeAnalysis(raw: Record<string, unknown>, provider?: strin
       .slice(0, 8)
     : []
   const suggested = raw.suggestedProjectPath
+  const sessionModelRaw = raw.sessionModel
+  const sessionModel = sessionModelRaw !== null && typeof sessionModelRaw === 'object'
+    ? (() => {
+      const record = sessionModelRaw as Record<string, unknown>
+      const provider = asString(record.provider)
+      const model = asString(record.model)
+      return provider.length > 0 && model.length > 0 ? { provider, model } : null
+    })()
+    : null
+  const title = asString(raw.title).trim()
   return {
     provider,
     model,
+    ...(title.length > 0 ? { title: title.slice(0, 80) } : {}),
+    sessionModel,
     summary: asString(raw.summary, '(no summary)'),
     confidence: asConfidence(raw.confidence),
     needsClarification: raw.needsClarification === true || asStringArray(raw.questions).length > 0,
@@ -223,20 +246,25 @@ export class MateAnalyzer {
       'Projects available for dispatch (absolute path followed by a title):',
       projectsBlock(input.projects),
       '',
+      'Models available for the implementing session (provider: model ids):',
+      modelsBlock(input.models),
+      '',
       'Output contract:',
       ANALYSIS_CONTRACT,
     ].filter((line) => line.length > 0).join('\n')
 
     const user = [
-      `Requirement title: ${requirement.title}`,
-      `Project: ${requirement.projectTitle} (${requirement.projectPath})`,
+      requirement.title.length > 0 && requirement.title !== requirement.brief.slice(0, requirement.title.length)
+        ? `Requirement title: ${requirement.title}`
+        : '',
+      requirement.projectPath.length > 0 ? `Project: ${requirement.projectTitle} (${requirement.projectPath})` : '',
       '',
       'Requirement:',
       clip(requirement.brief, 8000),
       '',
       'Discussion so far:',
       discussionBlock(requirement.discussion),
-    ].join('\n')
+    ].filter((line, index, lines) => !(line === '' && (index === 0 || lines[index - 1] === ''))).join('\n')
 
     return this.callJson({
       config: mate.model,
@@ -369,3 +397,4 @@ function parseOrThrow(text: string): Record<string, unknown> | null {
     return null
   }
 }
+

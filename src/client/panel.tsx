@@ -194,22 +194,18 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>{t('view.list')}</button>
         </div>
         <div className="mate-filters" style={{ flex: 1 }}>
-          <select className="mate-select" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
-            <option value="all">{t('filter.allProjects')}</option>
-            {projects.map((project) => (
-              <option key={project.path} value={project.path}>{projectLabel(project.path)}</option>
-            ))}
-          </select>
-          <select
-            className="mate-select"
-            value={columnFilter}
-            onChange={(event) => setColumnFilter(event.target.value as 'all' | ColumnKey)}
-          >
-            <option value="all">{t('filter.allStatus')}</option>
-            {COLUMNS.map((column) => (
-              <option key={column.key} value={column.key}>{t(`column.${column.key}`)}</option>
-            ))}
-          </select>
+          {view === 'list' ? (
+            <select
+              className="mate-select"
+              value={columnFilter}
+              onChange={(event) => setColumnFilter(event.target.value as 'all' | ColumnKey)}
+            >
+              <option value="all">{t('filter.allStatus')}</option>
+              {COLUMNS.map((column) => (
+                <option key={column.key} value={column.key}>{t(`column.${column.key}`)}</option>
+              ))}
+            </select>
+          ) : null}
           <input
             className="mate-input"
             value={query}
@@ -230,6 +226,32 @@ export function MatePanel(context: PanelContext): React.ReactElement {
         </button>
       </div>
 
+      <div className="mate-projecttabs" role="tablist" aria-label={t('compose.project')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={projectFilter === 'all'}
+          className={`mate-projecttab${projectFilter === 'all' ? ' on' : ''}`}
+          onClick={() => setProjectFilter('all')}
+        >
+          {t('filter.allProjects')}
+        </button>
+        {projects.map((project) => (
+          <button
+            key={project.path}
+            type="button"
+            role="tab"
+            aria-selected={projectFilter === project.path}
+            className={`mate-projecttab${projectFilter === project.path ? ' on' : ''}`}
+            title={project.path}
+            onClick={() => setProjectFilter(project.path)}
+          >
+            {projectLabel(project.path)}
+            {project.running > 0 ? <span className="mate-dot" style={{ marginLeft: 5 }} /> : null}
+          </button>
+        ))}
+      </div>
+
       <ActiveStrip context={context} />
 
       {snapshot === null ? (
@@ -248,7 +270,55 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           hint={t('empty.requirements.hint')}
           action={<Button variant="primary" onClick={() => setComposeOpen(true)}>{t('action.newRequirement')}</Button>}
         />
-      ) : view === 'board' ? (
+      ) : view === 'list' ? (
+        <div className="mate-list">
+          {[...filtered].sort((a, b) => b.updatedAt - a.updatedAt).map((requirement) => (
+            <button key={requirement.id} type="button" className="mate-row" onClick={() => setDrawerId(requirement.id)}>
+              <div className="mate-row-main">
+                <span className="mate-row-title">#{requirement.number} {requirement.title}</span>
+                <span className="mate-row-meta">
+                  {requirement.mateName} · {projectLabel(requirement.projectPath)} · {requirement.mateModel} · {formatRelative(requirement.updatedAt, lang)}
+                </span>
+              </div>
+              <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' ? 'warn' : ''}>
+                {t(`status.${requirement.status}`)}
+              </Badge>
+              {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
+            </button>
+          ))}
+          {sessionCards.map((session) => (
+            <button
+              key={session.sessionId}
+              type="button"
+              className="mate-row mate-row-session"
+              onClick={() => openSession(session.sessionId)}
+            >
+              <div className="mate-row-main">
+                <span className="mate-row-title">{session.title}</span>
+                <span className="mate-row-meta">
+                  {projectLabel(session.cwd)} · {session.running ? t('status.running') : t('badge.idle')} · {formatRelative(session.updatedAt, lang)}
+                </span>
+              </div>
+              <Badge tone="warn">{t('badge.untracked')}</Badge>
+              <Button
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void controller.run<RequirementView>(
+                    `adopt:${session.sessionId}`,
+                    COMMANDS.requirementAdoptSession,
+                    { sessionId: session.sessionId },
+                  ).then((created) => { if (created !== null) setDrawerId(created.id) })
+                }}
+              >
+                {t('action.adopt')}
+              </Button>
+            </button>
+          ))}
+          {filtered.length === 0 && sessionCards.length === 0
+            ? <div className="mate-empty">{t('empty.column')}</div>
+            : null}
+        </div>
+      ) : (
         <div className="mate-board">
           {COLUMNS.map((column) => (
             <div key={column.key} className="mate-col">
@@ -266,6 +336,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                     lang={lang}
                     childrenCount={snapshot.requirements.filter((item) => item.parentId === card.requirement.id).length}
                     onOpen={() => setDrawerId(card.requirement.id)}
+                    onOpenSession={() => openSession(card.requirement.dispatch?.sessionId ?? '')}
                   />
                 ) : (
                   <SessionCard
@@ -291,23 +362,6 @@ export function MatePanel(context: PanelContext): React.ReactElement {
             </div>
           ))}
         </div>
-      ) : (
-        <div className="mate-list">
-          {[...filtered].sort((a, b) => b.updatedAt - a.updatedAt).map((requirement) => (
-            <button key={requirement.id} type="button" className="mate-row" onClick={() => setDrawerId(requirement.id)}>
-              <div className="mate-row-main">
-                <span className="mate-row-title">#{requirement.number} {requirement.title}</span>
-                <span className="mate-row-meta">
-                  {requirement.mateName} · {projectLabel(requirement.projectPath)} · {requirement.mateModel} · {formatRelative(requirement.updatedAt, lang)}
-                </span>
-              </div>
-              <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' ? 'warn' : ''}>
-                {t(`status.${requirement.status}`)}
-              </Badge>
-              {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
-            </button>
-          ))}
-        </div>
       )}
 
       {state.notice !== null && state.notice.text.length > 0 ? (
@@ -321,6 +375,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           snapshot={snapshot}
           t={t}
           busy={busy('requirement.create')}
+          projectPath={projectFilter !== 'all' ? projectFilter : snapshot.projects[0]?.path ?? ''}
           onClose={() => setComposeOpen(false)}
           onSubmit={async (payload) => {
             const created = await controller.run<RequirementView>('requirement.create', COMMANDS.requirementCreate, payload)
@@ -424,44 +479,57 @@ function ActiveStrip({ context }: { context: PanelContext }): React.ReactElement
   )
 }
 
-function RequirementCard({ requirement, t, lang, childrenCount, onOpen }: {
+function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSession }: {
   requirement: RequirementView
   t: PanelContext['t']
   lang: 'zh' | 'en'
   childrenCount: number
   onOpen: () => void
+  onOpenSession?: () => void
 }): React.ReactElement {
   const status = requirement.status
   return (
-    <button type="button" className="mate-card" onClick={onOpen}>
-      <span className="mate-card-title">#{requirement.number} {requirement.title}</span>
-      <span className="mate-card-meta">
-        <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
-          {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
-        </Badge>
-        {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
-        {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
-        <span>{t(`status.${status}`)}</span>
-      </span>
-      <span className="mate-card-foot">
-        <span>{projectLabel(requirement.projectPath)}</span>
-        <span>·</span>
-        <span>{requirement.mateName}</span>
-        {requirement.analysis !== null ? (
-          <>
-            <span>·</span>
-            <span>{t('meta.noTasks', { n: requirement.analysis.subTasks.length })}</span>
-          </>
-        ) : null}
-        {childrenCount > 0 ? (
-          <>
-            <span>·</span>
-            <span>{childrenCount} {t('drawer.children')}</span>
-          </>
-        ) : null}
-        <span style={{ marginLeft: 'auto' }}>{formatRelative(requirement.updatedAt, lang)}</span>
-      </span>
-    </button>
+    <div className="mate-card">
+      <button type="button" className="mate-card-open" onClick={onOpen}>
+        <span className="mate-card-title">#{requirement.number} {requirement.title}</span>
+        <span className="mate-card-meta">
+          <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
+            {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
+          </Badge>
+          {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
+          {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
+          <span>{t(`status.${status}`)}</span>
+        </span>
+        <span className="mate-card-foot">
+          <span>{projectLabel(requirement.projectPath)}</span>
+          <span>·</span>
+          <span>{requirement.mateName}</span>
+          {requirement.analysis !== null ? (
+            <>
+              <span>·</span>
+              <span>{t('meta.noTasks', { n: requirement.analysis.subTasks.length })}</span>
+            </>
+          ) : null}
+          {childrenCount > 0 ? (
+            <>
+              <span>·</span>
+              <span>{childrenCount} {t('drawer.children')}</span>
+            </>
+          ) : null}
+          <span style={{ marginLeft: 'auto' }}>{formatRelative(requirement.updatedAt, lang)}</span>
+        </span>
+      </button>
+      {requirement.dispatch !== null && onOpenSession !== undefined ? (
+        <button
+          type="button"
+          className="mate-session-chip"
+          title={requirement.dispatch.sessionId}
+          onClick={(event) => { event.stopPropagation(); onOpenSession() }}
+        >
+          {t('card.session')} · {t(`status.${status}`)}
+        </button>
+      ) : null}
+    </div>
   )
 }
 
