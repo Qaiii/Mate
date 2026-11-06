@@ -144,6 +144,7 @@ const ZH: Record<string, string> = {
   'mate.modelLabel': '模型',
   'mate.effort': '思考强度',
   'mate.effortDefault': '默认',
+  'mate.effortHint': '分析需求时使用的推理强度；默认跟随模型。',
   'mate.autonomy': '默认执行方式',
   'mate.autonomyHint': '自动：Mate 理解后直接派发，不懂就先和你讨论；确认制：每次都要你点确认',
   'mate.threshold': '自动派发阈值',
@@ -344,6 +345,7 @@ const EN: Record<string, string> = {
   'mate.modelLabel': 'Model',
   'mate.effort': 'Reasoning effort',
   'mate.effortDefault': 'default',
+  'mate.effortHint': 'Reasoning level used for analysis; default follows the model.',
   'mate.autonomy': 'Default mode',
   'mate.autonomyHint': 'Auto: the Mate dispatches once it understands, otherwise it asks you first. Confirm: you approve every dispatch.',
   'mate.threshold': 'Auto-dispatch threshold',
@@ -415,6 +417,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

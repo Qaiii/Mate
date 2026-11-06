@@ -1,5 +1,5 @@
 import React from 'react'
-import { COMMANDS, type MateDistillView, type MateMemoryKind, type MateView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
+import { COMMANDS, type MateDistillView, type MateMemoryKind, type MateView, type ModelEffortsView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
 import type { Translator } from './locales.js'
 import type { MateController } from './controller.js'
 import { projectLabel } from './types.js'
@@ -220,7 +220,7 @@ export interface MatePayload {
 }
 
 /** Mate identity is the name it displays and answers as; the model is one pick. */
-export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onDistill, onRemember, onForget }: {
+export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onDistill, onRemember, onForget, onEfforts }: {
   mate: MateView | null
   snapshot: Snapshot | null
   t: Translator
@@ -231,6 +231,7 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   onDistill: (text: string) => Promise<MateDistillView | null>
   onRemember: (entries: Array<{ kind: MateMemoryKind; text: string }>) => Promise<MateView | null>
   onForget: (entryId: string) => Promise<MateView | null>
+  onEfforts: (provider: string, model: string) => Promise<ModelEffortsView | null>
 }): React.ReactElement {
   const catalog = snapshot?.settings.modelCatalog ?? []
   const options = catalog.flatMap((group) => group.models.map((model) => ({
@@ -248,9 +249,13 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   const [teachText, setTeachText] = React.useState('')
   const [memoryBusy, setMemoryBusy] = React.useState(false)
   const [proposal, setProposal] = React.useState<MateDistillView['entries'] | null>(null)
+  const [effort, setEffort] = React.useState(mate?.model.reasoningEffort ?? '')
+  const [efforts, setEfforts] = React.useState<ModelEffortsView['efforts']>([])
+  const [effortsLoading, setEffortsLoading] = React.useState(false)
   const proposalRef = React.useRef<HTMLDivElement | null>(null)
   const selected = options.find((option) => option.key === modelKey)
   const legacyKey = mate !== null && selected === undefined ? initialKey : null
+  const [modelProvider, modelId] = modelKey.split('|')
 
   const submit = async (): Promise<void> => {
     const trimmed = name.trim()
@@ -259,7 +264,11 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     await onSubmit({
       ...(mate === null ? {} : { id: mate.id }),
       name: trimmed,
-      model: { provider: selectedProvider, model: selectedModel },
+      model: {
+        provider: selectedProvider,
+        model: selectedModel,
+        ...(effort.length > 0 ? { reasoningEffort: effort } : {}),
+      },
       autonomy,
     })
   }
@@ -267,6 +276,23 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   React.useEffect(() => {
     if (proposal !== null) proposalRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [proposal])
+
+  const effortsCb = React.useRef(onEfforts)
+  effortsCb.current = onEfforts
+
+  React.useEffect(() => {
+    if (modelProvider === undefined || modelId === undefined || modelId.length === 0) return
+    let cancelled = false
+    setEffortsLoading(true)
+    void effortsCb.current(modelProvider, modelId).then((value) => {
+      if (cancelled) return
+      const list = value?.efforts ?? []
+      setEfforts(list)
+      setEffortsLoading(false)
+      setEffort((current) => (current.length === 0 || list.some((option) => option.id === current) ? current : ''))
+    })
+    return () => { cancelled = true }
+  }, [modelProvider, modelId])
 
   const teach = async (): Promise<void> => {
     const text = teachText.trim()
@@ -350,8 +376,17 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
           ))}
         </select>
       </Field>
-      <Field label={t('mate.autonomy')} hint={t('mate.autonomyHint')}>
-        <select className="mate-select" value={autonomy} onChange={(event) => setAutonomy(event.target.value as 'confirm' | 'auto')}>
+      {efforts.length > 0 ? (
+        <Field label={t('mate.effort')} hint={t('mate.effortHint')}>
+          <select className="mate-select" value={effort} onChange={(event) => setEffort(event.target.value)}>
+            <option value="">{t('mate.effortDefault')}</option>
+            {efforts.map((option) => (
+              <option key={option.id} value={option.id}>{option.name}</option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+      <Field label={t('mate.autonomy')} hint={t('mate.autonomyHint')}>        <select className="mate-select" value={autonomy} onChange={(event) => setAutonomy(event.target.value as 'confirm' | 'auto')}>
           <option value="auto">{t('badge.auto')}</option>
           <option value="confirm">{t('badge.confirm')}</option>
         </select>
@@ -521,6 +556,8 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
+
 
 
 

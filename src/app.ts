@@ -20,6 +20,7 @@ import {
   type ProjectSource,
   type RequirementView,
   type MateDistillView,
+  type ModelEffortsView,
   type MateMemoryEntry,
   type SessionTranscriptMessage,
   type SessionTranscriptView,
@@ -38,6 +39,7 @@ export interface AppDeps {
   store: MateStore
   controller: SessionControllerLike
   analyzer: MateAnalyzer | null
+  reasoning: ((provider: string, model: string) => Promise<ModelEffortsView | null>) | null
   transcript: ((sessionId: string) => Promise<string>) | null
   workspaceController: WorkspaceControllerLike | null
   log: (message: string) => void
@@ -155,6 +157,7 @@ export class MateApp {
       case COMMANDS.mateUpdate: return this.updateMate(args)
       case COMMANDS.mateArchive: return this.archiveMate(args)
       case COMMANDS.mateDelete: return this.deleteMate(args)
+      case COMMANDS.modelEfforts: return this.modelEfforts(args)
       case COMMANDS.mateDistill: return this.distillMate(args)
       case COMMANDS.mateRemember: return this.rememberMemory(args)
       case COMMANDS.mateForget: return this.forgetMemory(args)
@@ -247,6 +250,13 @@ export class MateApp {
     return { deleted: true }
   }
 
+  /** Adapter-owned reasoning levels for one model route. */
+  private async modelEfforts(args: Record<string, unknown>): Promise<ModelEffortsView> {
+    const provider = requiredString(args.provider, 'provider-required', 'A provider is required')
+    const model = requiredString(args.model, 'model-required', 'A model is required')
+    if (this.deps.reasoning === null) return { efforts: [] }
+    return (await this.deps.reasoning(provider, model)) ?? { efforts: [] }
+  }
   /** Let the Mate read the instruction and show what it would remember. */
   private async distillMate(args: Record<string, unknown>): Promise<MateDistillView> {
     const mate = this.requireMate(args.id)
@@ -1149,6 +1159,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
 
 
 

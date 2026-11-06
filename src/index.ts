@@ -37,6 +37,36 @@ function textOfMessage(message: unknown): string {
     .join('\n')
 }
 
+/** Ask the LLM runtime for the adapter-owned reasoning levels of one model. */
+function makeReasoningReader(
+  llm: unknown,
+): ((provider: string, model: string) => Promise<{ efforts: Array<{ id: string; name: string; description?: string }>; defaultEffort?: string } | null>) | null {
+  const service = llm as {
+    resolveModelInfo?: (provider: string, model: string, signal?: AbortSignal) => Promise<{
+      reasoning?: {
+        efforts?: Array<{ id: string; name: string; description?: string }>
+        defaultEffort?: string
+      }
+    }>
+  } | null | undefined
+  if (service === null || service === undefined || typeof service.resolveModelInfo !== 'function') return null
+  return async (provider, model) => {
+    try {
+      const info = await service.resolveModelInfo!(provider, model)
+      const efforts = (info.reasoning?.efforts ?? []).map((effort) => ({
+        id: effort.id,
+        name: effort.name,
+        ...(effort.description === undefined ? {} : { description: effort.description }),
+      }))
+      return {
+        efforts,
+        ...(info.reasoning?.defaultEffort === undefined ? {} : { defaultEffort: info.reasoning.defaultEffort }),
+      }
+    } catch {
+      return null
+    }
+  }
+}
 /** Reduce a validated session log to a bounded transcript for the summarizer. */
 function reduceTranscript(snapshot: unknown): string {
   return reduceMessages(snapshot)
@@ -98,7 +128,8 @@ export function apply(ctx: Context): void {
 
           const store = new MateStore(domain as never)
           const analyzer = llm ? new MateAnalyzer(llm as unknown as ConstructorParameters<typeof MateAnalyzer>[0]) : null
-          const app = new MateApp({ store, controller, analyzer, transcript: null, workspaceController: null, log })
+          const reasoning = makeReasoningReader(llm)
+          const app = new MateApp({ store, controller, analyzer, reasoning, transcript: null, workspaceController: null, log })
           await app.refreshModelCatalog()
           await app.markStarted()
           if (cancelled) return
@@ -204,3 +235,4 @@ export function apply(ctx: Context): void {
     route(API.command, async (body, app) => app.command(body as CommandRequest))
   })
 }
+

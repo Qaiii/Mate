@@ -58,6 +58,17 @@ export interface MateView {
   archived: boolean
 }
 
+export interface ModelEffortOption {
+  id: string
+  name: string
+  description?: string
+}
+
+export interface ModelEffortsView {
+  efforts: ModelEffortOption[]
+  defaultEffort?: string
+}
+
 export interface MateDistillView {
   entries: Array<{ kind: MateMemoryKind; text: string; existing: boolean }>
 }
@@ -285,6 +296,7 @@ export const COMMANDS = {
   mateUpdate: 'mate.update',
   mateArchive: 'mate.archive',
   mateDelete: 'mate.delete',
+  modelEfforts: 'model.efforts',
   mateDistill: 'mate.distill',
   mateRemember: 'mate.remember',
   mateForget: 'mate.forget',
@@ -312,6 +324,7 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+
 
 
 
