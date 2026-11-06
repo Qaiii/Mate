@@ -127,18 +127,6 @@ export const STYLES = `
 .mate-filters .mate-input { width: 220px; }
 .mate-search { width: 208px; flex: none; }
 
-.mate-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; flex: none; }
-.mate-strip-item {
-  display: flex; flex-direction: column; gap: 2px; min-width: 168px;
-  padding: 8px 10px; border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.24));
-  background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.06));
-  color: var(--dsw-alias-label-primary, #0f1115);
-  font-size: 12px;
-}
-.mate-strip-item b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mate-strip-item span { color: var(--dsw-alias-label-secondary, #4b5563); font-size: 11.5px; }
-
 .mate-board { display: flex; gap: 10px; flex: 1; min-height: 0; overflow-x: auto; padding-bottom: 14px; align-items: stretch; }
 .mate-col {
   display: flex; flex-direction: column; gap: 8px;
@@ -148,7 +136,7 @@ export const STYLES = `
   border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.16));
   overflow-y: auto;
 }
-.mate-col-sessions { min-width: 244px; }\n.mate-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; position: sticky; top: 0; color: var(--dsw-alias-label-primary, #0f1115); }
+.mate-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; position: sticky; top: 0; color: var(--dsw-alias-label-primary, #0f1115); }
 .mate-count { font-weight: 500; font-size: 11.5px; color: var(--dsw-alias-label-secondary, #4b5563); }
 .mate-empty { font-size: 12px; padding: 10px 4px; color: var(--dsw-alias-label-secondary, #4b5563); }
 
@@ -373,6 +361,8 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
+
 
 
 

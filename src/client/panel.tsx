@@ -249,8 +249,6 @@ export function MatePanel(context: PanelContext): React.ReactElement {
         </button>
       </div>
 
-      <ActiveStrip context={context} />
-
       {snapshot === null ? (
         state.phase === 'error'
           ? <EmptyState title={t('error.starting')} hint={state.error ?? undefined} action={<Button onClick={refresh}>{t('action.refresh')}</Button>} />
@@ -437,36 +435,6 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   )
 }
 
-function ActiveStrip({ context }: { context: PanelContext }): React.ReactElement | null {
-  const { state, t, openSession } = context
-  const sessions = state.snapshot?.liveSessions ?? []
-  if (sessions.length === 0) return null
-  const running = sessions.filter((session) => session.running)
-  const shown = [...running, ...sessions.filter((session) => !session.running)].slice(0, 8)
-  const lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
-  return (
-    <div className="mate-strip" aria-label="live sessions">
-      {shown.map((session) => (
-        <button
-          key={session.sessionId}
-          type="button"
-          className="mate-strip-item"
-          onClick={() => openSession(session.sessionId)}
-          title={session.cwd}
-          style={{ textAlign: 'left', color: 'inherit', cursor: 'pointer' }}
-        >
-          <b>{session.title}</b>
-          <span>
-            {session.running ? (lang === 'zh' ? '运行中' : 'running') : projectLabel(session.cwd)}
-            {' · '}
-            {formatRelative(session.updatedAt, lang)}
-          </span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSession }: {
   requirement: RequirementView
   t: PanelContext['t']
@@ -545,6 +513,7 @@ function SessionCard({ session, t, lang, onOpen }: {
     </button>
   )
 }
+
 
 
 
