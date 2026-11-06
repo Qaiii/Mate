@@ -42,7 +42,6 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
   const [source, setSource] = React.useState<ProjectSource>('auto')
   const [selectedPath, setSelectedPath] = React.useState('')
   const [newPath, setNewPath] = React.useState('')
-  const [pickerBusy, setPickerBusy] = React.useState(false)
   const [registerBusy, setRegisterBusy] = React.useState(false)
   const [hint, setHint] = React.useState<string | null>(null)
   const areaRef = React.useRef<HTMLTextAreaElement | null>(null)
@@ -65,28 +64,6 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
     setSource('user')
     setHint(null)
     setSelectedPath((current) => current.length > 0 ? current : (lastValid ?? projects[0]?.path ?? ''))
-  }
-
-  const pickNative = async (): Promise<void> => {
-    setPickerBusy(true)
-    setHint(null)
-    try {
-      const result = await controller.run<{ path: string | null }>('project.pickDirectory', COMMANDS.projectPickDirectory, {})
-      if (result !== null && typeof result.path === 'string' && result.path.length > 0) {
-        setSelectedPath(result.path)
-        setSource('user-new')
-        setMode('user')
-        setNewPath('')
-        setHint(t('compose.projectRegistered'))
-      }
-    } catch {
-      // Errors surface through the controller notice; keep the manual input.
-    } finally {
-      setPickerBusy(false)
-    }
-    if (controller.getSnapshot().notice?.kind === 'error') {
-      setHint(controller.getSnapshot().notice?.text ?? t('error.projectPickFailed'))
-    }
   }
 
   const registerManual = async (): Promise<void> => {
@@ -214,21 +191,16 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
 
       {mode === 'user-new' ? (
         <Field label={t('compose.projectNew')} hint={t('compose.projectNewHint')}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button busy={pickerBusy} onClick={() => { void pickNative() }}>{t('compose.projectNewPick')}</Button>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                className="mate-input"
-                value={newPath}
-                placeholder={t('compose.projectPathPlaceholder')}
-                onChange={(event) => setNewPath(event.target.value)}
-              />
-              <Button busy={registerBusy} disabled={newPath.trim().length === 0} onClick={() => { void registerManual() }}>
-                {t('compose.projectNewRegister')}
-              </Button>
-            </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              className="mate-input"
+              value={newPath}
+              placeholder={t('compose.projectPathPlaceholder')}
+              onChange={(event) => setNewPath(event.target.value)}
+            />
+            <Button busy={registerBusy} disabled={newPath.trim().length === 0} onClick={() => { void registerManual() }}>
+              {t('compose.projectNewRegister')}
+            </Button>
           </div>
         </Field>
       ) : null}

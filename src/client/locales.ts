@@ -95,7 +95,7 @@ const ZH: Record<string, string> = {
   'compose.projectNew': '新建项目',
   'compose.projectAutoHint': '交由 Mate 分析并决定派发到哪个项目',
   'compose.projectListHint': '选择一个项目；Mate 仍会复核这个选择',
-  'compose.projectNewHint': '选择一个目录作为新项目并登记进项目列表',
+  'compose.projectNewHint': '输入目录绝对路径，登记为项目并选中',
   'compose.projectNewPick': '选择目录',
   'compose.projectNewRegister': '登记并选中',
   'compose.projectPathPlaceholder': '输入项目绝对路径…',
@@ -295,7 +295,7 @@ const EN: Record<string, string> = {
   'compose.projectNew': 'New project',
   'compose.projectAutoHint': 'Let Mate analyze and decide which project to dispatch to',
   'compose.projectListHint': 'Pick a project; Mate still double-checks this choice',
-  'compose.projectNewHint': 'Pick a directory to register as a new project',
+  'compose.projectNewHint': 'Enter an absolute directory path to register it as a project',
   'compose.projectNewPick': 'Choose directory',
   'compose.projectNewRegister': 'Register and select',
   'compose.projectPathPlaceholder': 'Enter an absolute project path…',
@@ -415,6 +415,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 
