@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { extractJsonObject, normalizeAnalysis, normalizeResult } from '../src/analyzer.js'
+import { extractJsonObject, normalizeAnalysis, normalizeMemory, normalizeResult } from '../src/analyzer.js'
+import { mergeMemory } from '../src/app.js'
 import { buildBrief } from '../src/dispatch.js'
 import { isTerminal, statusLabel } from '../src/shared.js'
 import type { MateView, RequirementView } from '../src/shared.js'
@@ -143,6 +144,39 @@ describe('buildBrief', () => {
     }), mate)
     expect(brief).toContain('# Extra instruction')
     expect(brief).toContain('Use TypeScript only')
+  })
+})
+
+describe('mate memory', () => {
+  it('normalizes kinds, drops junk and de-duplicates', () => {
+    const entries = normalizeMemory([
+      { kind: 'constraint', text: '  只改 apps/web  ' },
+      { kind: 'constraint', text: '只改 APPS/WEB' },
+      { kind: 'nonsense', text: 'ignored' },
+      { kind: 'note', text: '' },
+      { kind: 'preference', text: '先给结论' },
+    ])
+    expect(entries).toEqual([
+      { kind: 'constraint', text: '只改 apps/web' },
+      { kind: 'preference', text: '先给结论' },
+    ])
+  })
+
+  it('refuses a non-array payload', () => {
+    expect(normalizeMemory('nope')).toEqual([])
+    expect(normalizeMemory({ entries: [] })).toEqual([])
+  })
+
+  it('folds distilled facts into existing memory without duplicates', () => {
+    const existing = [{ id: 'a', kind: 'role' as const, text: '只改 apps/web', createdAt: 1 }]
+    const merged = mergeMemory(existing, [
+      { kind: 'role', text: '只改 APPS/WEB' },
+      { kind: 'preference', text: '先给结论' },
+    ], 42)
+    expect(merged).toHaveLength(2)
+    expect(merged[0]).toEqual(existing[0])
+    expect(merged[1]).toMatchObject({ kind: 'preference', text: '先给结论', createdAt: 42 })
+    expect(typeof merged[1]?.id).toBe('string')
   })
 })
 

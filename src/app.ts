@@ -1,5 +1,6 @@
 import type { MateAnalyzer, ProjectOption } from './analyzer.js'
 import { Dispatcher, type SessionControllerLike, type SessionSummaryLike, type WorkspaceControllerLike } from './dispatch.js'
+import { randomUUID } from 'node:crypto'
 import { newMateId, newRequirementId, type MateStore } from './store.js'
 import { planAnalysisOutcome, projectSourceOf, resolveDispatchProject } from './planning.js'
 import { isDirectory, normalizeProjectPath } from './projects.js'
@@ -18,6 +19,7 @@ import {
   type ProjectResolution,
   type ProjectSource,
   type RequirementView,
+  type MateMemoryEntry,
   type SessionTranscriptMessage,
   type SessionTranscriptView,
   type SettingsView,
@@ -152,6 +154,8 @@ export class MateApp {
       case COMMANDS.mateUpdate: return this.updateMate(args)
       case COMMANDS.mateArchive: return this.archiveMate(args)
       case COMMANDS.mateDelete: return this.deleteMate(args)
+      case COMMANDS.mateTeach: return this.teachMate(args)
+      case COMMANDS.mateForget: return this.forgetMemory(args)
       case COMMANDS.settingsUpdate: return this.updateSettings(args)
       default: throw new CommandError('unknown-command', `unknown command: ${request.command}`)
     }
@@ -241,6 +245,29 @@ export class MateApp {
     return { deleted: true }
   }
 
+  /** Distill the user's instruction into this Mate's durable memory. */
+  private async teachMate(args: Record<string, unknown>): Promise<MateView> {
+    const mate = this.requireMate(args.id)
+    const text = requiredString(args.text, 'text-required', 'Tell the Mate what it should remember')
+    if (this.deps.analyzer === null) {
+      throw new CommandError('analyzer-unavailable', 'ctx.llm is unavailable in this profile')
+    }
+    const output = await this.deps.analyzer.distillMemory({
+      mate,
+      text,
+      language: this.language,
+      maxTokens: 1200,
+    })
+    const memory = mergeMemory(mate.memory ?? [], output.entries)
+    return this.deps.store.putMate({ ...mate, memory, updatedAt: Date.now() })
+  }
+
+  private async forgetMemory(args: Record<string, unknown>): Promise<MateView> {
+    const mate = this.requireMate(args.id)
+    const entryId = requiredString(args.entryId, 'entry-required', 'A memory entry is required')
+    const memory = (mate.memory ?? []).filter((entry) => entry.id !== entryId)
+    return this.deps.store.putMate({ ...mate, memory, updatedAt: Date.now() })
+  }
   // --------------------------------------------------------- requirements
 
   private async createRequirement(args: Record<string, unknown>): Promise<RequirementView> {
@@ -1025,6 +1052,21 @@ function sessionTitle(summary: SessionSummaryLike): string {
   return summary.sessionId.slice(0, 12)
 }
 
+/** Fold distilled facts into the stored memory, de-duplicating and capping. */
+export function mergeMemory(
+  current: MateMemoryEntry[],
+  distilled: Array<{ kind: MateMemoryEntry['kind']; text: string }>,
+  now = Date.now(),
+): MateMemoryEntry[] {
+  const byText = new Map<string, MateMemoryEntry>()
+  for (const entry of current) byText.set(entry.text.toLowerCase(), entry)
+  for (const entry of distilled) {
+    const key = entry.text.toLowerCase()
+    if (byText.has(key)) continue
+    byText.set(key, { id: randomUUID(), kind: entry.kind, text: entry.text, createdAt: now })
+  }
+  return [...byText.values()].slice(-60)
+}
 function baseName(path: string): string {
   if (!path) return ''
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -1088,5 +1130,6 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
 
 

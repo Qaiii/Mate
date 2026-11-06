@@ -29,6 +29,16 @@ export interface ModelSelection {
   reasoningEffort?: string
 }
 
+export type MateMemoryKind = 'role' | 'constraint' | 'preference' | 'glossary' | 'note'
+
+/** One durable fact the Mate distilled from the user's instructions. */
+export interface MateMemoryEntry {
+  id: string
+  kind: MateMemoryKind
+  text: string
+  createdAt: number
+}
+
 export interface MateView {
   id: string
   name: string
@@ -41,6 +51,8 @@ export interface MateView {
   maxParallel: number
   allowSplit: boolean
   persona: string
+  /** Long-term memory the Mate distilled from the user's own words. */
+  memory?: MateMemoryEntry[]
   createdAt: number
   updatedAt: number
   archived: boolean
@@ -269,6 +281,8 @@ export const COMMANDS = {
   mateUpdate: 'mate.update',
   mateArchive: 'mate.archive',
   mateDelete: 'mate.delete',
+  mateTeach: 'mate.teach',
+  mateForget: 'mate.forget',
   settingsUpdate: 'settings.update',
 } as const
 
@@ -293,4 +307,5 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+
 

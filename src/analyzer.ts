@@ -111,6 +111,59 @@ function modelsBlock(models: AnalyzeInput['models']): string {
     `${group.provider} (${group.name}): ${group.models.map((model) => model.id).join(', ')}`).join('\n')
 }
 
+function memoryBlock(memory: MateView['memory'] | undefined): string {
+  if (memory === undefined || memory.length === 0) return ''
+  return memory.map((entry) => `- [${entry.kind}] ${entry.text}`).join('\n')
+}
+
+const MEMORY_CONTRACT = `Return ONE JSON object and nothing else, with this exact shape:
+{
+  "entries": [{ "kind": "role", "text": "one durable fact" }]
+}
+Rules:
+- "kind" is one of: "role" (what this Mate is and how it introduces itself), "constraint" (a hard limit it must respect), "preference" (a soft working preference), "glossary" (a project-specific term and its meaning), "note" (anything else worth remembering).
+- One fact per entry, written as a standalone sentence in the user's language.
+- Only record what the user actually stated or clearly implied; never invent facts.
+- Fold an existing entry into a rewritten one when the new instruction refines it; do not duplicate it.
+- At most 12 entries per answer.
+- Never wrap the JSON in markdown fences.`
+
+export interface DistillMemoryInput {
+  mate: MateView
+  text: string
+  language: string
+  maxTokens: number
+  signal?: AbortSignal
+}
+
+export interface DistillMemoryOutput {
+  entries: Array<{ kind: NonNullable<MateView['memory']>[number]['kind']; text: string }>
+  usage: { inputTokens: number; outputTokens: number }
+  raw: string
+}
+
+const MEMORY_KINDS = ['role', 'constraint', 'preference', 'glossary', 'note'] as const
+
+/** Keep only well-formed entries, de-duplicated case-insensitively, capped. */
+export function normalizeMemory(raw: unknown): DistillMemoryOutput['entries'] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const entries: DistillMemoryOutput['entries'] = []
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const kind = MEMORY_KINDS.find((candidate) => candidate === record.kind)
+    const text = asString(record.text).trim()
+    if (kind === undefined || text.length === 0) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    entries.push({ kind, text: text.slice(0, 500) })
+    if (entries.length >= 12) break
+  }
+  return entries
+}
+
 function clip(text: string, limit: number): string {
   const value = text.trim()
   return value.length <= limit ? value : `${value.slice(0, limit)}\n…(truncated)`
@@ -244,6 +297,9 @@ export class MateAnalyzer {
       `You are ${mate.name}, a project manager inside DeepSeek Harness.`,
       mate.specialty ? `Your specialty: ${mate.specialty}.` : '',
       mate.persona ? `Working style: ${mate.persona}` : '',
+      memoryBlock(mate.memory).length > 0
+        ? ['What you remember about how you should work:', memoryBlock(mate.memory)].join('\n')
+        : '',
       'You turn a short human requirement into a dispatchable plan for coding agents.',
       `Answer in ${languageName(input.language)}.`,
       '',
@@ -278,6 +334,41 @@ export class MateAnalyzer {
       signal: input.signal,
       normalize: (raw) => normalizeAnalysis(raw, mate.model.provider, mate.model.model),
       shape: (value) => ({ analysis: value as AnalysisView }),
+    })
+  }
+
+  /**
+   * Turn the user's own words about how this Mate should behave into durable
+   * memory entries. The Mate decides what is worth remembering.
+   */
+  async distillMemory(input: DistillMemoryInput): Promise<DistillMemoryOutput> {
+    const { mate } = input
+    const system = [
+      `You maintain the long-term memory of "${mate.name}", a project manager inside DeepSeek Harness.`,
+      `Answer in ${languageName(input.language)}.`,
+      '',
+      'Existing memory:',
+      memoryBlock(mate.memory) || '(empty)',
+      '',
+      'Output contract:',
+      MEMORY_CONTRACT,
+    ].filter((line) => line.length > 0).join('\n')
+
+    const user = [
+      'The user wants this Mate to understand the following about itself (role, limits, preferences):',
+      clip(input.text, 8000),
+      '',
+      'Capture it as memory entries, folding refined facts into the existing ones.',
+    ].join('\n')
+
+    return this.callJson({
+      config: mate.model,
+      system,
+      user,
+      maxTokens: input.maxTokens,
+      signal: input.signal,
+      normalize: (raw) => normalizeMemory(raw.entries),
+      shape: (entries) => ({ entries }),
     })
   }
 

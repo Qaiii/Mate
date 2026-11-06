@@ -53,6 +53,12 @@ const MateSchema: z.ZodType<MateView> = z.object({
   maxParallel: z.number(),
   allowSplit: z.boolean(),
   persona: z.string(),
+  memory: z.array(z.object({
+    id: z.string(),
+    kind: z.enum(['role', 'constraint', 'preference', 'glossary', 'note']),
+    text: z.string(),
+    createdAt: z.number(),
+  })).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
   archived: z.boolean(),
@@ -200,5 +206,6 @@ export const mateDomain = defineDomain({
 })
 
 export type MateDomain = typeof mateDomain
+
 
 

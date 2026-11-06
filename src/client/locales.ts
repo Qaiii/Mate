@@ -115,7 +115,18 @@ const ZH: Record<string, string> = {
   'mate.name': '名称',
   'mate.nameHint': '它显示的名字，也是它在对话里的自称；随时可改',
   'mate.specialty': '擅长什么',
-  'mate.persona': '工作风格（追加到提示词）',
+  'mate.memoryTitle': '记忆',
+  'mate.memoryHint': '你告诉 Mate 的要求，它会理解后写进记忆，之后每次分析都会带上。',
+  'mate.memoryAfterSave': '保存后可以在这里教它、查看它的记忆。',
+  'mate.memoryEmpty': '还没有记忆。在下面告诉它你的要求、限制或偏好。',
+  'mate.teachPlaceholder': '例如：这个项目只允许改 apps/web；回复我时先给结论；我们内部把「吐司」叫 toast。',
+  'action.remember': '让 Mate 记住',
+  'action.forget': '忘记',
+  'memory.kind.role': '角色',
+  'memory.kind.constraint': '限制',
+  'memory.kind.preference': '偏好',
+  'memory.kind.glossary': '术语',
+  'memory.kind.note': '备注',  'mate.persona': '工作风格（追加到提示词）',
   'mate.personaHint': '用几句话描述它该怎么工作，会加进每次分析的提示词',
   'mate.description': '简介',
   'mate.modelSection': '分析与讨论用的模型',
@@ -298,7 +309,18 @@ const EN: Record<string, string> = {
   'mate.name': 'Name',
   'mate.nameHint': 'The name it displays and answers as; editable any time',
   'mate.specialty': 'Specialty',
-  'mate.persona': 'Working style (appended to the prompt)',
+  'mate.memoryTitle': 'Memory',
+  'mate.memoryHint': 'What you tell the Mate is understood and written into its memory, used by every later analysis.',
+  'mate.memoryAfterSave': 'Save first, then teach it and review its memory here.',
+  'mate.memoryEmpty': 'No memory yet. Tell it your requirements, limits or preferences below.',
+  'mate.teachPlaceholder': 'e.g. only touch apps/web in this project; lead with the conclusion; we call the toast a "snack".',
+  'action.remember': 'Remember this',
+  'action.forget': 'Forget',
+  'memory.kind.role': 'role',
+  'memory.kind.constraint': 'constraint',
+  'memory.kind.preference': 'preference',
+  'memory.kind.glossary': 'glossary',
+  'memory.kind.note': 'note',  'mate.persona': 'Working style (appended to the prompt)',
   'mate.personaHint': 'A few sentences on how it should work; appended to every analysis prompt',
   'mate.description': 'Description',
   'mate.modelSection': 'Model for analysis and discussion',
@@ -381,6 +403,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

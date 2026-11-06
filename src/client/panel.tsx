@@ -376,6 +376,16 @@ export function MatePanel(context: PanelContext): React.ReactElement {
             if (saved !== null) setMateEditor(null)
             return saved !== null
           }}
+          onTeach={async (text) => {
+            const mate = mateEditor === 'new' ? null : mateEditor
+            if (mate === null) return null
+            return controller.run<MateView>('mate.teach', COMMANDS.mateTeach, { id: mate.id, text })
+          }}
+          onForget={async (entryId) => {
+            const mate = mateEditor === 'new' ? null : mateEditor
+            if (mate === null) return null
+            return controller.run<MateView>('mate.forget', COMMANDS.mateForget, { id: mate.id, entryId })
+          }}
         />
       ) : null}
 

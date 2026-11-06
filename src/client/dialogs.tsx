@@ -3,7 +3,7 @@ import { COMMANDS, type MateView, type ModelSelection, type ProjectSource, type 
 import type { Translator } from './locales.js'
 import type { MateController } from './controller.js'
 import { projectLabel } from './types.js'
-import { Button, Field, Modal } from './ui.js'
+import { Badge, Button, Field, Modal } from './ui.js'
 
 export interface ComposePayload {
   brief: string
@@ -243,13 +243,12 @@ export function ComposeDialog({ snapshot, controller, t, busy, onClose, onSubmit
 export interface MatePayload {
   id?: string
   name: string
-  persona: string
   model: ModelSelection
   autonomy: 'confirm' | 'auto'
 }
 
 /** Mate identity is the name it displays and answers as; the model is one pick. */
-export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete }: {
+export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, onDelete, onTeach, onForget }: {
   mate: MateView | null
   snapshot: Snapshot | null
   t: Translator
@@ -257,6 +256,8 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   onClose: () => void
   onSubmit: (payload: MatePayload) => Promise<boolean> | void
   onDelete: (mate: MateView) => void | Promise<void>
+  onTeach: (text: string) => Promise<MateView | null>
+  onForget: (entryId: string) => Promise<MateView | null>
 }): React.ReactElement {
   const catalog = snapshot?.settings.modelCatalog ?? []
   const options = catalog.flatMap((group) => group.models.map((model) => ({
@@ -268,9 +269,11 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     ? `${mate.model.provider}|${mate.model.model}`
     : options[0]?.key ?? ''
   const [name, setName] = React.useState(mate?.name ?? '')
-  const [persona, setPersona] = React.useState(mate?.persona ?? '')
   const [modelKey, setModelKey] = React.useState(initialKey)
   const [autonomy, setAutonomy] = React.useState<'confirm' | 'auto'>(mate?.autonomy ?? 'auto')
+  const [memory, setMemory] = React.useState(mate?.memory ?? [])
+  const [teachText, setTeachText] = React.useState('')
+  const [memoryBusy, setMemoryBusy] = React.useState(false)
   const selected = options.find((option) => option.key === modelKey)
   const legacyKey = mate !== null && selected === undefined ? initialKey : null
 
@@ -281,10 +284,35 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     await onSubmit({
       ...(mate === null ? {} : { id: mate.id }),
       name: trimmed,
-      persona: persona.trim(),
       model: { provider: selectedProvider, model: selectedModel },
       autonomy,
     })
+  }
+
+  const teach = async (): Promise<void> => {
+    const text = teachText.trim()
+    if (text.length === 0 || mate === null || memoryBusy) return
+    setMemoryBusy(true)
+    try {
+      const updated = await onTeach(text)
+      if (updated !== null) {
+        setMemory(updated.memory ?? [])
+        setTeachText('')
+      }
+    } finally {
+      setMemoryBusy(false)
+    }
+  }
+
+  const forget = async (entryId: string): Promise<void> => {
+    if (mate === null || memoryBusy) return
+    setMemoryBusy(true)
+    try {
+      const updated = await onForget(entryId)
+      if (updated !== null) setMemory(updated.memory ?? [])
+    } finally {
+      setMemoryBusy(false)
+    }
   }
 
   return (
@@ -337,8 +365,46 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
           <option value="confirm">{t('badge.confirm')}</option>
         </select>
       </Field>
-      <Field label={t('mate.persona')} hint={t('mate.personaHint')}>
-        <textarea className="mate-textarea" value={persona} onChange={(event) => setPersona(event.target.value)} />
+
+      <Field label={t('mate.memoryTitle')} hint={mate === null ? t('mate.memoryAfterSave') : t('mate.memoryHint')}>
+        {mate === null ? null : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {memory.length === 0 ? (
+              <div className="mate-sub">{t('mate.memoryEmpty')}</div>
+            ) : (
+              memory.map((entry) => (
+                <div key={entry.id} className="mate-row" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+                  <span className="mate-row-main">
+                    <span className="mate-row-title" style={{ whiteSpace: 'normal' }}>
+                      <Badge>{t(`memory.kind.${entry.kind}`)}</Badge> {entry.text}
+                    </span>
+                  </span>
+                  <Button variant="ghost" busy={memoryBusy} onClick={() => { void forget(entry.id) }}>
+                    {t('action.forget')}
+                  </Button>
+                </div>
+              ))
+            )}
+            <textarea
+              className="mate-textarea"
+              style={{ minHeight: 84 }}
+              value={teachText}
+              placeholder={t('mate.teachPlaceholder')}
+              onChange={(event) => setTeachText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault()
+                  void teach()
+                }
+              }}
+            />
+            <div>
+              <Button variant="primary" busy={memoryBusy} disabled={teachText.trim().length === 0} onClick={() => { void teach() }}>
+                {t('action.remember')}
+              </Button>
+            </div>
+          </div>
+        )}
       </Field>
     </Modal>
   )
@@ -425,4 +491,5 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
 
