@@ -69,6 +69,9 @@ const ZH: Record<string, string> = {
   'action.send': '发送',
   'card.session': '会话',
   'session.preview': '会话预览',
+  'session.view': '视图',
+  'session.viewDrawer': '抽屉',
+  'session.viewWindow': '窗口',
   'session.loading': '加载会话…',
   'session.empty': '这个会话还没有消息。',
   'session.unavailable': '当前 profile 无法读取会话内容',
@@ -224,6 +227,9 @@ const EN: Record<string, string> = {
   'action.send': 'Send',
   'card.session': 'Session',
   'session.preview': 'Session preview',
+  'session.view': 'View',
+  'session.viewDrawer': 'Drawer',
+  'session.viewWindow': 'Window',
   'session.loading': 'Loading session…',
   'session.empty': 'This session has no messages yet.',
   'session.unavailable': 'This profile cannot read session content',
@@ -325,6 +331,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

@@ -222,6 +222,33 @@ export const STYLES = `
 .mate-check { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dsw-alias-label-primary, #0f1115); }
 .mate-check input[type="checkbox"] { accent-color: var(--dsw-alias-state-business-primary, #247bbf); width: 14px; height: 14px; }
 
+.mate-viewtoggle { display: inline-flex; border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3)); border-radius: 8px; overflow: hidden; }
+.mate-viewtoggle button {
+  border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #4b5563);
+  font: inherit; font-size: 11.5px; padding: 3px 9px; cursor: pointer;
+}
+.mate-viewtoggle button.on { background: var(--dsw-alias-interactive-bg-active, rgba(128,128,128,0.16)); color: var(--dsw-alias-label-primary, #0f1115); font-weight: 600; }
+.mate-window {
+  position: fixed; z-index: 55;
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(760px, 92vw); max-height: min(78vh, 720px);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px 14px; border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-3, #ffffff);
+  color: var(--dsw-alias-label-primary, #0f1115);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,0.3));
+  box-shadow: 0 24px 64px rgba(0,0,0,0.34);
+}
+.mate-window-head {
+  display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.2));
+  cursor: grab; user-select: none; touch-action: none;
+}
+.mate-window-head:active { cursor: grabbing; }
+.mate-window-grip { opacity: 0.5; font-size: 14px; }
+.mate-window-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mate-window-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.mate-window-body { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
 .mate-drawer-backdrop { position: fixed; inset: 0; z-index: 50; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.3)); display: flex; justify-content: flex-end; }
 .mate-drawer {
   width: min(680px, 94vw); height: 100%; overflow-y: auto;
@@ -361,6 +388,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 
