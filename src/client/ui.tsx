@@ -78,6 +78,15 @@ export const STYLES = `
 .mate-btn.danger { color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #c62828) 80%, var(--dsw-alias-label-primary, #0f1115)); }
 .mate-btn.ghost { border-color: transparent; background: transparent; }
 .mate-btn.ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)); }
+/* Danger keeps its own tint on hover: the generic hover surface lightens the
+   background until the red label drops under 4.5:1 in the dark theme. */
+.mate-btn.danger:hover:not(:disabled),
+.mate-btn.danger:active:not(:disabled) {
+  /* Keep the idle surface: tinting it was still too light against the red
+     label in the dark theme. The border tint is the affordance. */
+  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #c62828) 45%, var(--dsw-alias-border-l2, rgba(128,128,128,0.32)));
+}
 .mate-btn:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #247bbf); outline-offset: 1px; }
 
 .mate-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; flex: none; min-width: 0; }
@@ -343,6 +352,35 @@ export const STYLES = `
   box-shadow: 0 8px 24px rgba(0,0,0,0.28);
 }
 .mate-notice.error { color: #ff9d9d; }
+/* Interaction polish: every clickable control that is not a .mate-btn gets
+   hover feedback, and all of them show a keyboard focus ring. */
+.mate-chip:not(.on):hover,
+.mate-projecttab:not(.on):hover,
+.mate-seg button:not(.on):hover,
+.mate-viewtoggle button:not(.on):hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12));
+  color: var(--dsw-alias-label-primary, #0f1115);
+}
+.mate-chip:not(.on):hover,
+.mate-projecttab:not(.on):hover {
+  border-color: var(--dsw-alias-border-l3, rgba(128,128,128,0.42));
+}
+.mate-card:hover,
+.mate-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12));
+}
+.mate-chip:focus-visible,
+.mate-projecttab:focus-visible,
+.mate-seg button:focus-visible,
+.mate-viewtoggle button:focus-visible,
+.mate-chip-edit:focus-visible,
+.mate-card:focus-visible,
+.mate-card-open:focus-visible,
+.mate-row:focus-visible,
+.mate-session-chip:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #247bbf);
+  outline-offset: 1px;
+}
 `
 
 export function Spinner(): React.ReactElement {
@@ -434,6 +472,8 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
+
 
 
 
