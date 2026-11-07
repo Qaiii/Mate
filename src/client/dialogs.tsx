@@ -367,7 +367,7 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     <Modal
       title={mate === null ? t('action.newMate') : mate.name}
       onClose={onClose}
-      narrow
+      wide
       footer={(
         <>
           {mate !== null ? (
@@ -390,41 +390,75 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
         </>
       )}
     >
-      <Field label={t('mate.name')} hint={t('mate.nameHint')}>
-        <input className="mate-input" value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-      </Field>
-      <Field label={t('mate.modelLabel')}>
-        <select className="mate-select" value={modelKey} onChange={(event) => setModelKey(event.target.value)}>
-          {legacyKey !== null ? <option value={legacyKey}>{legacyKey.replace('|', ' / ')}</option> : null}
-          {catalog.map((group) => (
-            <optgroup key={group.provider} label={group.name || group.provider}>
-              {group.models.map((entry) => (
-                <option key={`${group.provider}|${entry.id}`} value={`${group.provider}|${entry.id}`}>
-                  {entry.name || entry.id}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </Field>
-      {efforts.length > 0 ? (
-        <Field label={t('mate.effort')} hint={t('mate.effortHint')}>
-          <select className="mate-select" value={effort} onChange={(event) => setEffort(event.target.value)}>
-            <option value="">{t('mate.effortDefault')}</option>
-            {efforts.map((option) => (
-              <option key={option.id} value={option.id}>{option.name}</option>
-            ))}
-          </select>
-        </Field>
-      ) : null}
-      <Field label={t('mate.autonomy')} hint={t('mate.autonomyHint')}>        <select className="mate-select" value={autonomy} onChange={(event) => setAutonomy(event.target.value as 'confirm' | 'auto')}>
-          <option value="auto">{t('badge.auto')}</option>
-          <option value="confirm">{t('badge.confirm')}</option>
-        </select>
-      </Field>
+      <div className="mate-profile">
+        <div className="mate-profile-hero">
+          <div className="mate-avatar" aria-hidden="true">{(name.trim().charAt(0) || 'M').toUpperCase()}</div>
+          <div className="mate-profile-id">
+            <input
+              className="mate-profile-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t('mate.name')}
+              aria-label={t('mate.name')}
+              autoFocus
+            />
+            <div className="mate-profile-meta">
+              <Badge tone="confirm">{selected?.label ?? modelKey.replace('|', ' / ')}</Badge>
+              {efforts.length > 0 ? (
+                <Badge>{effort.length > 0 ? (efforts.find((option) => option.id === effort)?.name ?? effort) : t('mate.effortDefault')}</Badge>
+              ) : null}
+              <Badge tone={autonomy === 'auto' ? 'auto' : 'confirm'}>
+                {autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
+              </Badge>
+              <span className="mate-sub">{memory.length} {t('mate.memoryUnit')}</span>
+            </div>
+            <div className="mate-sub">{t('mate.nameHint')}</div>
+          </div>
+        </div>
 
-      <Field label={t('mate.dispatchModels')} hint={t('mate.dispatchModelsHint')}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <section className="mate-profile-section">
+          <h3>{t('mate.section.model')}</h3>
+          <div className="mate-grid3">
+            <Field label={t('mate.modelLabel')}>
+              <select className="mate-select" value={modelKey} onChange={(event) => setModelKey(event.target.value)}>
+                {legacyKey !== null ? <option value={legacyKey}>{legacyKey.replace('|', ' / ')}</option> : null}
+                {catalog.map((group) => (
+                  <optgroup key={group.provider} label={group.name || group.provider}>
+                    {group.models.map((entry) => (
+                      <option key={`${group.provider}|${entry.id}`} value={`${group.provider}|${entry.id}`}>
+                        {entry.name || entry.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+            {efforts.length > 0 ? (
+              <Field label={t('mate.effort')} hint={t('mate.effortHint')}>
+                <select className="mate-select" value={effort} onChange={(event) => setEffort(event.target.value)}>
+                  <option value="">{t('mate.effortDefault')}</option>
+                  {efforts.map((option) => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <Field label={t('mate.effort')}>
+                <div className="mate-sub">{t('mate.effortUnavailable')}</div>
+              </Field>
+            )}
+            <Field label={t('mate.autonomy')} hint={t('mate.autonomyHint')}>
+              <select className="mate-select" value={autonomy} onChange={(event) => setAutonomy(event.target.value as 'confirm' | 'auto')}>
+                <option value="auto">{t('badge.auto')}</option>
+                <option value="confirm">{t('badge.confirm')}</option>
+              </select>
+            </Field>
+          </div>
+        </section>
+
+        <section className="mate-profile-section">
+          <Field label={t('mate.dispatchModels')} hint={t('mate.dispatchModelsHint')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rules.length === 0 ? (
             <div className="mate-sub">{t('mate.dispatchModelsEmpty')}</div>
           ) : (
@@ -488,9 +522,11 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
             </Button>
           </div>
         </div>
-      </Field>
+          </Field>
+        </section>
 
-      <Field label={t('mate.memoryTitle')} hint={effective === null ? t('mate.memoryCreateHint') : t('mate.memoryHint')}>
+        <section className="mate-profile-section">
+          <Field label={t('mate.memoryTitle')} hint={effective === null ? t('mate.memoryCreateHint') : t('mate.memoryHint')}>
         {effective === null ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <textarea
@@ -624,6 +660,8 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
           </div>
         )}
       </Field>
+        </section>
+      </div>
     </Modal>
   )
 }

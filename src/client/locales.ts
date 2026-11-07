@@ -115,6 +115,9 @@ const ZH: Record<string, string> = {
   'mate.name': '名称',
   'mate.nameHint': '它显示的名字，也是它在对话里的自称；随时可改',
   'mate.specialty': '擅长什么',
+  'mate.section.model': '模型与执行',
+  'mate.effortUnavailable': '该模型没有可选的思考强度',
+  'mate.memoryUnit': '条记忆',
   'mate.dispatchModels': '派发模型',
   'mate.dispatchModelsHint': '限制派发会话可用的模型与思考强度；留空则由 Mate 自行选择。',
   'mate.dispatchModelsEmpty': '不限制（Mate 自行选择实现模型）',
@@ -324,6 +327,9 @@ const EN: Record<string, string> = {
   'mate.name': 'Name',
   'mate.nameHint': 'The name it displays and answers as; editable any time',
   'mate.specialty': 'Specialty',
+  'mate.section.model': 'Model & execution',
+  'mate.effortUnavailable': 'This model exposes no reasoning levels',
+  'mate.memoryUnit': 'memory entries',
   'mate.dispatchModels': 'Dispatch models',
   'mate.dispatchModelsHint': 'Restrict which model/effort pairs dispatched sessions may use; leave empty to let the Mate choose.',
   'mate.dispatchModelsEmpty': 'Unrestricted (the Mate chooses the implementing model)',
@@ -433,6 +439,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

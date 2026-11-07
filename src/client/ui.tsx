@@ -254,6 +254,8 @@ export const STYLES = `
   box-shadow: 0 18px 48px rgba(0,0,0,0.34);
 }
 .mate-dialog.narrow { width: min(520px, 92vw); }
+.mate-dialog.wide { width: min(940px, 96vw); max-height: 90vh; overflow: hidden; }
+.mate-dialog.wide .mate-dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .mate-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mate-dialog-head h2 { margin: 0; font-size: 15.5px; font-weight: 650; color: var(--dsw-alias-label-primary, #0f1115); }
 .mate-dialog-body { display: flex; flex-direction: column; gap: 12px; }
@@ -381,6 +383,44 @@ export const STYLES = `
   outline: 2px solid var(--dsw-alias-state-business-primary, #247bbf);
   outline-offset: 1px;
 }
+/* Mate profile layout: identity header plus grouped sections instead of one
+   long narrow form. */
+.mate-profile { display: flex; flex-direction: column; gap: 12px; }
+.mate-profile-hero {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.2));
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #247bbf) 8%, transparent);
+}
+.mate-avatar {
+  flex: none; width: 54px; height: 54px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700;
+  background: var(--dsw-alias-state-business-primary, #247bbf);
+  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+}
+.mate-profile-id { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.mate-profile-name {
+  width: 100%; border: 0; border-bottom: 1px solid transparent; background: transparent;
+  color: var(--dsw-alias-label-primary, #0f1115);
+  font: inherit; font-size: 19px; font-weight: 650; padding: 2px 0;
+}
+.mate-profile-name:focus { outline: none; border-bottom-color: var(--dsw-alias-state-business-primary, #247bbf); }
+.mate-profile-name::placeholder { color: var(--dsw-alias-label-secondary, #4b5563); }
+.mate-profile-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mate-profile-section {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.2));
+  background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.04));
+}
+.mate-profile-section > h3 {
+  margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
+  color: var(--dsw-alias-label-secondary, #4b5563);
+}
+@media (max-width: 780px) {
+  .mate-grid3 { grid-template-columns: 1fr; }
+}
 `
 
 export function Spinner(): React.ReactElement {
@@ -436,12 +476,13 @@ export function EmptyState({ title, hint, action }: {
 }
 
 /** Accessible modal: Escape closes, focus moves in, backdrop click closes. */
-export function Modal({ title, onClose, children, footer, narrow = false }: {
+export function Modal({ title, onClose, children, footer, narrow = false, wide = false }: {
   title: string
   onClose: () => void
   children: React.ReactNode
   footer?: React.ReactNode
   narrow?: boolean
+  wide?: boolean
 }): React.ReactElement {
   const ref = React.useRef<HTMLDivElement | null>(null)
 
@@ -461,7 +502,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
 
   return (
     <div className="mate-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className={`mate-dialog${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div className={`mate-dialog${narrow ? ' narrow' : ''}${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="mate-dialog-head">
           <h2>{title}</h2>
           <Button variant="ghost" onClick={onClose} aria-label="close">✕</Button>
@@ -472,6 +513,7 @@ export function Modal({ title, onClose, children, footer, narrow = false }: {
     </div>
   )
 }
+
 
 
 
