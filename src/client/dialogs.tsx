@@ -1,5 +1,5 @@
 import React from 'react'
-import { COMMANDS, type MateDistillView, type MateMemoryKind, type MateView, type ModelEffortsView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
+import { COMMANDS, type DispatchModelRule, type MateDistillView, type MateMemoryKind, type MateView, type ModelEffortsView, type ModelSelection, type ProjectSource, type Snapshot } from '../shared.js'
 import type { Translator } from './locales.js'
 import type { MateController } from './controller.js'
 import { projectLabel } from './types.js'
@@ -169,6 +169,8 @@ export interface MatePayload {
   name: string
   model: ModelSelection
   autonomy: 'confirm' | 'auto'
+  /** Restrict which model/effort pairs dispatched sessions may use. */
+  dispatchModels?: DispatchModelRule[]
   /** Instruct the Mate at creation time; it is distilled into memory then. */
   memoryText?: string
 }
@@ -213,6 +215,12 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
   const selected = options.find((option) => option.key === modelKey)
   const legacyKey = mate !== null && selected === undefined ? initialKey : null
   const [modelProvider, modelId] = modelKey.split('|')
+  const [rules, setRules] = React.useState<Array<{ provider: string; model: string; effort: string }>>(
+    (mate?.dispatchModels ?? []).map((rule) => ({ provider: rule.provider, model: rule.model, effort: rule.reasoningEffort ?? '' })),
+  )
+  const [ruleEfforts, setRuleEfforts] = React.useState<Record<string, ModelEffortsView['efforts']>>({})
+  const ruleEffortsCb = React.useRef(onEfforts)
+  ruleEffortsCb.current = onEfforts
   const effective = mate ?? created
   const effectiveId = effective?.id ?? null
 
@@ -229,6 +237,11 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
         ...(effort.length > 0 ? { reasoningEffort: effort } : {}),
       },
       autonomy,
+      dispatchModels: rules.map((rule) => ({
+        provider: rule.provider,
+        model: rule.model,
+        ...(rule.effort.length > 0 ? { reasoningEffort: rule.effort } : {}),
+      })),
       ...(mate === null && teachText.trim().length > 0 ? { memoryText: teachText.trim() } : {}),
     })
     if (saved === null) return
@@ -274,6 +287,28 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
     })
     return () => { cancelled = true }
   }, [modelProvider, modelId])
+
+  // Fetch each dispatch rule's effort options once per model route.
+  React.useEffect(() => {
+    const missing = rules
+      .map((rule) => `${rule.provider}|${rule.model}`)
+      .filter((key, index, list) => list.indexOf(key) === index && ruleEfforts[key] === undefined)
+    if (missing.length === 0) return
+    let cancelled = false
+    for (const key of missing) {
+      const [provider, model] = key.split('|')
+      void ruleEffortsCb.current(provider, model).then((value) => {
+        if (cancelled) return
+        const list = value?.efforts ?? []
+        setRuleEfforts((current) => ({ ...current, [key]: list }))
+        setRules((current) => current.map((rule) => {
+          if (`${rule.provider}|${rule.model}` !== key || rule.effort.length === 0) return rule
+          return list.some((option) => option.id === rule.effort) ? rule : { ...rule, effort: '' }
+        }))
+      })
+    }
+    return () => { cancelled = true }
+  }, [rules, ruleEfforts])
 
   const teach = async (): Promise<void> => {
     const text = teachText.trim()
@@ -386,6 +421,73 @@ export function MateEditorDialog({ mate, snapshot, t, busy, onClose, onSubmit, o
           <option value="auto">{t('badge.auto')}</option>
           <option value="confirm">{t('badge.confirm')}</option>
         </select>
+      </Field>
+
+      <Field label={t('mate.dispatchModels')} hint={t('mate.dispatchModelsHint')}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rules.length === 0 ? (
+            <div className="mate-sub">{t('mate.dispatchModelsEmpty')}</div>
+          ) : (
+            rules.map((rule, index) => {
+              const routeKey = `${rule.provider}|${rule.model}`
+              const effortOptions = ruleEfforts[routeKey] ?? []
+              return (
+                <div key={`${routeKey}-${index}`} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    className="mate-select"
+                    value={routeKey}
+                    aria-label={t('mate.dispatchModels')}
+                    onChange={(event) => {
+                      const [provider, model] = event.target.value.split('|')
+                      setRules((current) => current.map((item, i) => (i === index ? { provider, model, effort: '' } : item)))
+                    }}
+                  >
+                    {catalog.map((group) => (
+                      <optgroup key={group.provider} label={group.name || group.provider}>
+                        {group.models.map((entry) => (
+                          <option key={`${group.provider}|${entry.id}`} value={`${group.provider}|${entry.id}`}>
+                            {entry.name || entry.id}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <select
+                    className="mate-select"
+                    style={{ maxWidth: 160 }}
+                    value={rule.effort}
+                    aria-label={t('mate.effort')}
+                    onChange={(event) => setRules((current) => current.map((item, i) => (i === index ? { ...item, effort: event.target.value } : item)))}
+                  >
+                    <option value="">{t('mate.effortDefault')}</option>
+                    {effortOptions.map((option) => (
+                      <option key={option.id} value={option.id}>{option.name}</option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="ghost"
+                    aria-label={`${t('action.delete')} ${rule.model}`}
+                    onClick={() => setRules((current) => current.filter((_, i) => i !== index))}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              )
+            })
+          )}
+          <div>
+            <Button
+              disabled={options.length === 0}
+              onClick={() => {
+                const first = options[0]
+                if (first === undefined) return
+                setRules((current) => [...current, { provider: first.provider, model: first.key.split('|')[1] ?? '', effort: '' }])
+              }}
+            >
+              {t('mate.dispatchAdd')}
+            </Button>
+          </div>
+        </div>
       </Field>
 
       <Field label={t('mate.memoryTitle')} hint={effective === null ? t('mate.memoryCreateHint') : t('mate.memoryHint')}>
@@ -607,6 +709,7 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     </Modal>
   )
 }
+
 
 
 

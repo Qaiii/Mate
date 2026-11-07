@@ -69,7 +69,7 @@ const ANALYSIS_CONTRACT = `Return ONE JSON object and nothing else, with this ex
   "risks": ["..."],
   "splitSuggestion": [{ "title": "...", "brief": "...", "acceptance": "..." }],
   "suggestedProjectPath": null,
-  "sessionModel": { "provider": "...", "model": "..." },
+  "sessionModel": { "provider": "...", "model": "...", "reasoningEffort": "..." },
   "priority": "normal"
 }
 Rules:
@@ -79,7 +79,7 @@ Rules:
 - "subTasks" are the concrete work items an implementing agent should do, 1-8 items, each with a verifiable acceptance point.
 - "splitSuggestion" is non-empty ONLY when the requirement is too large for one session; give 2-6 independent child requirements that could each be dispatched separately. You own this decision; the user does not configure it.
 - "suggestedProjectPath" must be one of the listed project paths, or null.
-- "sessionModel" is the model the implementing session should use, picked from the listed models, or null to keep the default. The user did not choose it; you decide.
+- "sessionModel" is the model route the implementing session should use, or null to keep the default. When a dispatch model restriction is listed below, pick one of those entries and keep its provider, model and reasoningEffort; otherwise pick from the listed catalog. The user did not choose it; you decide.
 - "priority" is "low", "normal" or "high", judged from the request and its urgency; the user does not set it.
 - Never wrap the JSON in markdown fences.`
 
@@ -243,7 +243,10 @@ export function normalizeAnalysis(raw: Record<string, unknown>, provider?: strin
       const record = sessionModelRaw as Record<string, unknown>
       const provider = asString(record.provider)
       const model = asString(record.model)
-      return provider.length > 0 && model.length > 0 ? { provider, model } : null
+      const effort = asString(record.reasoningEffort).trim()
+      return provider.length > 0 && model.length > 0
+        ? { provider, model, ...(effort.length > 0 ? { reasoningEffort: effort } : {}) }
+        : null
     })()
     : null
   const title = asString(raw.title).trim()
@@ -293,6 +296,7 @@ export class MateAnalyzer {
 
   async analyze(input: AnalyzeInput): Promise<AnalyzeOutput> {
     const { mate, requirement } = input
+    const blocked = mate.dispatchModels ?? []
     const system = [
       `You are ${mate.name}, a project manager inside DeepSeek Harness.`,
       mate.specialty ? `Your specialty: ${mate.specialty}.` : '',
@@ -306,8 +310,15 @@ export class MateAnalyzer {
       'Projects available for dispatch (absolute path followed by a title):',
       projectsBlock(input.projects),
       '',
-      'Models available for the implementing session (provider: model ids):',
-      modelsBlock(input.models),
+      ...(blocked.length > 0
+        ? [
+          'Dispatch models allowed for the implementing session (only these may be chosen):',
+          blocked.map((rule) => `- ${rule.provider} / ${rule.model}${rule.reasoningEffort === undefined ? '' : ` / ${rule.reasoningEffort}`}`).join('\n'),
+        ]
+        : [
+          'Models available for the implementing session (provider: model ids):',
+          modelsBlock(input.models),
+        ]),
       '',
       'Output contract:',
       ANALYSIS_CONTRACT,
@@ -492,5 +503,6 @@ function parseOrThrow(text: string): Record<string, unknown> | null {
     return null
   }
 }
+
 
 

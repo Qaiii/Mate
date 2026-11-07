@@ -13,6 +13,7 @@ import {
   type AnalysisView,
   type AutonomyMode,
   type CommandRequest,
+  type DispatchModelRule,
   type MateView,
   type ModelSelection,
   type PlanView,
@@ -193,6 +194,7 @@ export class MateApp {
       maxParallel: Math.round(clampNumber(args.maxParallel, 1, 8, 2)),
       allowSplit: args.allowSplit !== false,
       persona: optionalString(args.persona).slice(0, 2000),
+      ...(parseDispatchModels(args.dispatchModels) === undefined ? {} : { dispatchModels: parseDispatchModels(args.dispatchModels) }),
       createdAt: now,
       updatedAt: now,
       archived: false,
@@ -223,6 +225,7 @@ export class MateApp {
         : Math.round(clampNumber(args.maxParallel, 1, 8, mate.maxParallel)),
       allowSplit: args.allowSplit === undefined ? mate.allowSplit : args.allowSplit !== false,
       persona: args.persona === undefined ? mate.persona : optionalString(args.persona).slice(0, 2000),
+      ...(args.dispatchModels === undefined ? {} : { dispatchModels: parseDispatchModels(args.dispatchModels) }),
       updatedAt: Date.now(),
     }
     return this.deps.store.putMate(next)
@@ -697,6 +700,10 @@ export class MateApp {
       })
       const auto = requirement.autonomy === 'auto'
       const analysis = output.analysis
+      // A restricted Mate may only hand the session a model it was allowed.
+      if (mate.dispatchModels !== undefined && mate.dispatchModels.length > 0) {
+        analysis.sessionModel = resolveDispatchModel(mate.dispatchModels, analysis.sessionModel)
+      }
       const questions = analysis.questions
       const outcome = planAnalysisOutcome({
         projectSource: requirement.projectSource,
@@ -764,7 +771,11 @@ export class MateApp {
       return
     }
     // The Mate picked the session model during analysis; the user never sets it.
-    const model = requirement.sessionOverrides ?? requirement.analysis?.sessionModel ?? null
+    // A dispatch-model restriction still wins over a manual override.
+    const requested = requirement.sessionOverrides ?? requirement.analysis?.sessionModel ?? null
+    const model = mate.dispatchModels === undefined || mate.dispatchModels.length === 0
+      ? requested
+      : resolveDispatchModel(mate.dispatchModels, requested)
     try {
       const outcome = await this.dispatcher.dispatch(requirement, mate, projectPath, model)
       const now = Date.now()
@@ -1148,6 +1159,49 @@ function parsePriority(value: unknown): RequirementView['priority'] {
   return value === 'low' || value === 'high' ? value : 'normal'
 }
 
+/** Normalise the dispatch-model allowlist; an empty list means no restriction. */
+export function parseDispatchModels(value: unknown): DispatchModelRule[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const seen = new Set<string>()
+  const rules: DispatchModelRule[] = []
+  for (const item of value) {
+    if (item === null || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const provider = typeof record.provider === 'string' ? record.provider.trim() : ''
+    const model = typeof record.model === 'string' ? record.model.trim() : ''
+    const effort = typeof record.reasoningEffort === 'string' ? record.reasoningEffort.trim() : ''
+    if (provider.length === 0 || model.length === 0) continue
+    const key = `${provider}/${model}/${effort}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    rules.push({ provider, model, ...(effort.length > 0 ? { reasoningEffort: effort } : {}) })
+    if (rules.length >= 20) break
+  }
+  return rules.length === 0 ? undefined : rules
+}
+
+/** Map the Mate's pick onto the allowlist, keeping the effort of the match. */
+export function resolveDispatchModel(
+  rules: DispatchModelRule[] | undefined,
+  candidate: ModelSelection | null | undefined,
+): ModelSelection | null {
+  const allowed = rules ?? []
+  if (allowed.length === 0) return candidate ?? null
+  const toSelection = (rule: DispatchModelRule): ModelSelection => ({
+    provider: rule.provider,
+    model: rule.model,
+    ...(rule.reasoningEffort === undefined ? {} : { reasoningEffort: rule.reasoningEffort }),
+  })
+  if (candidate !== null && candidate !== undefined) {
+    const sameRoute = allowed.filter((rule) => rule.provider === candidate.provider && rule.model === candidate.model)
+    if (sameRoute.length > 0) {
+      const exact = sameRoute.find((rule) => (rule.reasoningEffort ?? '') === (candidate.reasoningEffort ?? ''))
+      return toSelection(exact ?? sameRoute[0])
+    }
+  }
+  return toSelection(allowed[0])
+}
+
 function parseProjectSource(value: unknown): ProjectSource {
   return value === 'user' ? 'user' : value === 'user-new' ? 'user-new' : 'auto'
 }
@@ -1172,6 +1226,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
 
 
 

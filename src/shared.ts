@@ -29,6 +29,12 @@ export interface ModelSelection {
   reasoningEffort?: string
 }
 
+export interface DispatchModelRule {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
 export type MateMemoryKind = 'role' | 'constraint' | 'preference' | 'glossary' | 'note'
 
 /** One durable fact the Mate distilled from the user's instructions. */
@@ -53,6 +59,8 @@ export interface MateView {
   persona: string
   /** Long-term memory the Mate distilled from the user's own words. */
   memory?: MateMemoryEntry[]
+  /** Sessions dispatched by this Mate may only use these model/effort pairs. */
+  dispatchModels?: DispatchModelRule[]
   createdAt: number
   updatedAt: number
   archived: boolean
@@ -325,6 +333,7 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+
 
 
 

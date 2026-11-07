@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { extractJsonObject, normalizeAnalysis, normalizeMemory, normalizeResult } from '../src/analyzer.js'
-import { mergeMemory } from '../src/app.js'
+import { mergeMemory, parseDispatchModels, resolveDispatchModel } from '../src/app.js'
 import { buildBrief } from '../src/dispatch.js'
 import { isTerminal, statusLabel } from '../src/shared.js'
 import type { MateView, RequirementView } from '../src/shared.js'
@@ -177,6 +177,47 @@ describe('mate memory', () => {
     expect(merged[0]).toEqual(existing[0])
     expect(merged[1]).toMatchObject({ kind: 'preference', text: '先给结论', createdAt: 42 })
     expect(typeof merged[1]?.id).toBe('string')
+  })
+})
+
+describe('dispatch model restrictions', () => {
+  it('keeps valid pairs, drops junk and duplicates', () => {
+    const rules = parseDispatchModels([
+      { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'max' },
+      { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'max' },
+      { provider: 'deepseek-account', model: 'deepseek-flash' },
+      { provider: '', model: 'x' },
+      { provider: 'p', model: 'm', reasoningEffort: 'low' },
+    ])
+    expect(rules).toEqual([
+      { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'max' },
+      { provider: 'deepseek-account', model: 'deepseek-flash' },
+      { provider: 'p', model: 'm', reasoningEffort: 'low' },
+    ])
+  })
+
+  it('treats an empty restriction as no restriction', () => {
+    expect(parseDispatchModels([])).toBeUndefined()
+    expect(resolveDispatchModel([], { provider: 'p', model: 'm' })).toEqual({ provider: 'p', model: 'm' })
+  })
+
+  it('maps an off-list pick onto the first allowed pair', () => {
+    const rules = [
+      { provider: 'a', model: 'x', reasoningEffort: 'high' },
+      { provider: 'b', model: 'y' },
+    ]
+    expect(resolveDispatchModel(rules, { provider: 'c', model: 'z' })).toEqual({ provider: 'a', model: 'x', reasoningEffort: 'high' })
+  })
+
+  it('keeps the effort of a matching route instead of the model default', () => {
+    const rules = [
+      { provider: 'a', model: 'x', reasoningEffort: 'low' },
+      { provider: 'a', model: 'x', reasoningEffort: 'max' },
+    ]
+    expect(resolveDispatchModel(rules, { provider: 'a', model: 'x', reasoningEffort: 'max' }))
+      .toEqual({ provider: 'a', model: 'x', reasoningEffort: 'max' })
+    expect(resolveDispatchModel(rules, { provider: 'a', model: 'x' }))
+      .toEqual({ provider: 'a', model: 'x', reasoningEffort: 'low' })
   })
 })
 

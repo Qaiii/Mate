@@ -115,6 +115,10 @@ const ZH: Record<string, string> = {
   'mate.name': '名称',
   'mate.nameHint': '它显示的名字，也是它在对话里的自称；随时可改',
   'mate.specialty': '擅长什么',
+  'mate.dispatchModels': '派发模型',
+  'mate.dispatchModelsHint': '限制派发会话可用的模型与思考强度；留空则由 Mate 自行选择。',
+  'mate.dispatchModelsEmpty': '不限制（Mate 自行选择实现模型）',
+  'mate.dispatchAdd': '添加模型',
   'mate.memoryTitle': '记忆',
   'mate.memoryHint': '你告诉 Mate 的要求，它会理解后写进记忆，之后每次分析都会带上。',
   'mate.memoryCreateHint': '写下它的角色、限制或偏好；保存时 Mate 会理解并写进记忆。',
@@ -320,6 +324,10 @@ const EN: Record<string, string> = {
   'mate.name': 'Name',
   'mate.nameHint': 'The name it displays and answers as; editable any time',
   'mate.specialty': 'Specialty',
+  'mate.dispatchModels': 'Dispatch models',
+  'mate.dispatchModelsHint': 'Restrict which model/effort pairs dispatched sessions may use; leave empty to let the Mate choose.',
+  'mate.dispatchModelsEmpty': 'Unrestricted (the Mate chooses the implementing model)',
+  'mate.dispatchAdd': 'Add model',
   'mate.memoryTitle': 'Memory',
   'mate.memoryHint': 'What you tell the Mate is understood and written into its memory, used by every later analysis.',
   'mate.memoryCreateHint': 'Describe its role, limits or preferences; the Mate distils this into memory when you save.',
@@ -425,6 +433,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 
