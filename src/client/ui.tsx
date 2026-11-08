@@ -485,12 +485,19 @@ export function Modal({ title, onClose, children, footer, narrow = false, wide =
   wide?: boolean
 }): React.ReactElement {
   const ref = React.useRef<HTMLDivElement | null>(null)
+  const onCloseRef = React.useRef(onClose)
+  onCloseRef.current = onClose
 
+  /*
+   * Focus the first field once, on mount only. Re-running this whenever the
+   * parent re-rendered (the controller polls every 2.5s, recreating `onClose`)
+   * refocused the first input and closed any open dropdown inside the dialog.
+   */
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        onClose()
+        onCloseRef.current()
       }
     }
     document.addEventListener('keydown', onKey, true)
@@ -498,7 +505,7 @@ export function Modal({ title, onClose, children, footer, narrow = false, wide =
       ?? ref.current?.querySelector<HTMLElement>('button')
     focusable?.focus()
     return () => { document.removeEventListener('keydown', onKey, true) }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="mate-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
