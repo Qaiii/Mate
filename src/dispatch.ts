@@ -163,7 +163,11 @@ export class Dispatcher {
     options: DispatchOptions = {},
   ): Promise<DispatchOutcome> {
     const warnings: DispatchWarning[] = []
-    const overrides: ModelSelection | null = requirement.sessionOverrides ?? model ?? null
+    // The caller (MateApp.runDispatch) resolves the final route after the Mate
+    // allow-list mapping and judges exactly that route against the availability
+    // window, so the gated route must be the one actually used. The raw
+    // requirement override is only a fallback when no route was resolved.
+    const overrides: ModelSelection | null = model ?? requirement.sessionOverrides ?? null
     const mode = requirement.plan?.dispatchMode ?? 'auto'
     const requested = options.reuseSessionId ?? null
 

@@ -207,14 +207,15 @@ function createAnalyzer(calls: string[]): MateAnalyzer {
 }
 
 /** Fake session controller: counts the dispatch calls the gate must prevent. */
-function createController(calls: Record<string, number>): SessionControllerLike {
+function createController(calls: Record<string, number>, selectedRoutes?: string[]): SessionControllerLike {
   return {
     async create() {
       calls.create += 1
       return { sessionId: `session-${calls.create}` }
     },
-    async selectModel() {
+    async selectModel(request: { sessionId: string; provider: string; model: string }) {
       calls.selectModel += 1
+      selectedRoutes?.push(`${request.provider}/${request.model}`)
       return {}
     },
     async rename() {
@@ -262,9 +263,10 @@ async function createHarness(options: HarnessOptions = {}) {
   const calls: Record<string, number> = {
     create: 0, selectModel: 0, rename: 0, prompt: 0, cancel: 0, list: 0, state: 0,
   }
+  const selectedRoutes: string[] = []
   const app = new MateApp({
     store,
-    controller: createController(calls),
+    controller: createController(calls, selectedRoutes),
     analyzer: createAnalyzer(analyzed),
     reasoning: null,
     transcript: null,
@@ -274,7 +276,7 @@ async function createHarness(options: HarnessOptions = {}) {
     timers: { set: timers.set, clear: timers.clear },
     ...(options.holidayData === undefined ? {} : { holidayData: options.holidayData }),
   })
-  return { app, store, domain, clock, timers, log, analyzed, calls }
+  return { app, store, domain, clock, timers, log, analyzed, calls, selectedRoutes }
 }
 
 type Harness = Awaited<ReturnType<typeof createHarness>>
@@ -461,6 +463,14 @@ describe('dispatch availability gate', () => {
     expect(blocked?.queue?.phase).toBe('dispatch')
     expect(blocked?.queue?.model).toEqual({ provider: 'p', model: 'mapped-model' })
     expect(blocked?.queue?.nextWakeAt).toBe(WINDOW_END)
+
+    // When the window opens, the route handed to the session is the gated
+    // allow-list-mapped route, not the raw (available) user override.
+    h.clock.value = WINDOW_END
+    await h.app.queue.tick()
+    await h.app.waitForBackground()
+    expect(h.store.getRequirement(created.id)?.status).toBe('running')
+    expect(h.selectedRoutes).toEqual(['p/mapped-model'])
   })
 
   it('blocks the dispatch route without calling the dispatcher, then dispatches once the window opens', async () => {
@@ -500,6 +510,8 @@ describe('dispatch availability gate', () => {
     expect(dispatched?.status).toBe('running')
     expect(dispatched?.queue ?? null).toBeNull()
     expect(dispatched?.dispatch?.sessionId).toBe('session-1')
+    // The gated route is exactly the route handed to the session.
+    expect(h.selectedRoutes).toEqual(['p/dispatch-model'])
   })
 })
 
@@ -652,5 +664,245 @@ describe('schedule settings', () => {
 
     expect(h.analyzed).toEqual(['R1'])
     expect(h.store.getRequirement(created.id)?.status).toBe('proposed')
+  })
+})
+
+describe('model availability scheduling: acceptance paths', () => {
+  it('makes zero model calls while every model is disabled, then resumes analysis and dispatch', async () => {
+    const projectPath = makeTempDir()
+    // Every route that could be used (analysis, dispatch, allow-list fallback) is
+    // inside the same weekday morning window.
+    const config: ScheduleConfig = {
+      models: [
+        { provider: 'p', model: ANALYSIS_MODEL.model, disabledWindows: [WEEKDAY_MORNING] },
+        { provider: 'p', model: DISPATCH_MODEL.model, disabledWindows: [WEEKDAY_MORNING] },
+        { provider: 'p', model: 'other-model', disabledWindows: [WEEKDAY_MORNING] },
+      ],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: 'UTC',
+    }
+    const h = await createHarness({ schedule: config })
+    const mate = createMate('mate_1', 'Planner', ANALYSIS_MODEL, {
+      dispatchModel: DISPATCH_MODEL,
+      autonomy: 'auto',
+    })
+    await h.store.putMate(mate)
+
+    const created = await createRequirement(h, mate.id, 'R1', { path: projectPath, title: 'tmp' })
+    await h.app.waitForBackground()
+
+    // No model call and no dispatch record: the requirement is only queued.
+    expect(h.analyzed).toEqual([])
+    expect(h.calls.create).toBe(0)
+    expect(h.calls.prompt).toBe(0)
+    const queued = h.store.getRequirement(created.id)
+    expect(queued?.status).toBe('queued')
+    expect(queued?.queue?.phase).toBe('analyze')
+    expect(queued?.dispatch ?? null).toBeNull()
+    expect(h.log.some((line) => line.includes('analyze blocked by model window'))).toBe(true)
+
+    // Restoring availability re-evaluates immediately and runs analysis + dispatch.
+    await h.app.command({
+      command: COMMANDS.settingsUpdate,
+      args: { schedule: { models: [], holidays: [], workdays: [], useBuiltinHolidays: true, timezone: 'UTC' } },
+    })
+    await h.app.waitForBackground()
+
+    expect(h.analyzed).toEqual(['R1'])
+    const running = h.store.getRequirement(created.id)
+    expect(running?.status).toBe('running')
+    expect(running?.dispatch?.sessionId).toBe('session-1')
+    expect(h.calls.create).toBe(1)
+  })
+
+  it('persists a 09:00-00:30 cross-midnight window and restores the queue with its 00:30 ETA after restart', async () => {
+    // Monday 2026-11-09 09:00 Asia/Shanghai == 2026-11-09T01:00Z.
+    const nineAm = Date.parse('2026-11-09T01:00:00Z')
+    // The window closes at 00:30 the following local day == 2026-11-09T16:30Z.
+    const expectedWake = Date.parse('2026-11-09T16:30:00Z')
+    const config: ScheduleConfig = {
+      models: [{
+        provider: 'p',
+        model: ANALYSIS_MODEL.model,
+        disabledWindows: [{ kind: 'weekday', start: '09:00', end: '00:30' }],
+      }],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: 'Asia/Shanghai',
+    }
+    const first = await createHarness({ schedule: config, clock: { value: nineAm } })
+    const mate = createMate('mate_1', 'Planner', ANALYSIS_MODEL)
+    await first.store.putMate(mate)
+    const created = await createRequirement(first, mate.id, 'R1')
+    await first.app.waitForBackground()
+
+    const queued = first.store.getRequirement(created.id)
+    expect(queued?.status).toBe('queued')
+    expect(queued?.queue?.window).toBe('weekday 09:00-00:30')
+    expect(queued?.queue?.nextWakeAt).toBe(expectedWake)
+    first.app.dispose()
+
+    // Simulate a stale persisted estimate (e.g. the schedule was edited while
+    // the Host was down): startup recovery must recompute it from the schedule.
+    await first.store.mutateRequirement(created.id, (current) => ({
+      ...current,
+      queue: current.queue == null ? current.queue : { ...current.queue, nextWakeAt: nineAm + 7 * 3_600_000 },
+    }))
+
+    // Same persisted storage domain, fresh Host: the config and queue recover,
+    // and the recomputed ETA is the window end (00:30 local).
+    const second = await createHarness({ domain: first.domain, clock: { value: nineAm } })
+    await second.app.resume()
+    const restored = second.store.getRequirement(created.id)
+    expect(restored?.status).toBe('queued')
+    expect(restored?.queue?.nextWakeAt).toBe(expectedWake)
+    expect(second.store.settings().schedule?.models[0]?.disabledWindows).toEqual([
+      { kind: 'weekday', start: '09:00', end: '00:30' },
+    ])
+    expect(second.timers.delays).toEqual([expectedWake - nineAm])
+
+    // Crossing the window resumes the requirement automatically.
+    second.clock.value = expectedWake
+    await second.app.resume()
+    await second.app.waitForBackground()
+    expect(second.analyzed).toEqual(['R1'])
+    expect(second.store.getRequirement(created.id)?.status).toBe('proposed')
+  })
+
+  it('rejects a new requirement once the FIFO queue reaches MAX_QUEUE_LENGTH', async () => {
+    const h = await createHarness({ schedule: blockedRoute(ANALYSIS_MODEL.model) })
+    const mate = createMate('mate_1', 'Planner', ANALYSIS_MODEL)
+    await h.store.putMate(mate)
+
+    for (let index = 0; index < MAX_QUEUE_LENGTH; index += 1) {
+      await createRequirement(h, mate.id, `R${index}`)
+    }
+    await h.app.waitForBackground()
+    expect(h.store.queuedRequirements()).toHaveLength(MAX_QUEUE_LENGTH)
+    expect(h.analyzed).toEqual([])
+
+    const before = h.store.listRequirements().length
+    await expect(h.app.command({
+      command: COMMANDS.requirementCreate,
+      args: { brief: 'one too many', mateId: mate.id },
+    })).rejects.toMatchObject({ code: 'queue-full' })
+
+    // Rejected before any record or number was allocated.
+    expect(h.store.listRequirements()).toHaveLength(before)
+    expect(h.store.queuedRequirements()).toHaveLength(MAX_QUEUE_LENGTH)
+  })
+
+  it('drops stale queue metadata when a queued requirement is cancelled or redispatched', async () => {
+    const projectPath = makeTempDir()
+    const h = await createHarness({ schedule: blockedRoute(ANALYSIS_MODEL.model) })
+    const mate = createMate('mate_1', 'Planner', ANALYSIS_MODEL, {
+      dispatchModel: FREE_MODEL,
+      autonomy: 'auto',
+    })
+    await h.store.putMate(mate)
+
+    // Cancelling a queued requirement must clear its waiting entry.
+    const first = await createRequirement(h, mate.id, 'CANCEL', { path: projectPath, title: 'tmp' })
+    await h.app.waitForBackground()
+    expect(h.store.getRequirement(first.id)?.status).toBe('queued')
+    const cancelled = await h.app.command({
+      command: COMMANDS.requirementCancel,
+      args: { id: first.id },
+    }) as RequirementView
+    expect(cancelled.status).toBe('cancelled')
+    expect(cancelled.queue ?? null).toBeNull()
+
+    // Redispatch likewise starts a clean dispatch attempt; its dispatch route is
+    // free here, so it runs instead of re-queueing.
+    const second = await createRequirement(h, mate.id, 'REDISPATCH', { path: projectPath, title: 'tmp' })
+    await h.app.waitForBackground()
+    expect(h.store.getRequirement(second.id)?.status).toBe('queued')
+    await h.app.command({ command: COMMANDS.requirementRedispatch, args: { id: second.id } })
+    await h.app.waitForBackground()
+    const redispatched = h.store.getRequirement(second.id)
+    expect(redispatched?.status).toBe('running')
+    expect(redispatched?.queue ?? null).toBeNull()
+  })
+
+  it('judges built-in statutory holidays and 调休 workdays, and logs a weekend-only fallback', async () => {
+    // A window pair that covers the whole local day (a lone 00:00-23:59 window
+    // would leave its last minute open because the end is exclusive).
+    const HOLIDAY_WINDOWS: DisabledWindow[] = [
+      { kind: 'holiday', start: '00:00', end: '12:00' },
+      { kind: 'holiday', start: '12:00', end: '00:00' },
+    ]
+    const WORKDAY_MORNING: DisabledWindow = { kind: 'weekday', start: '00:00', end: '12:00' }
+    const NATIONAL_DAY = Date.parse('2025-10-01T02:00:00Z') // 10:00 Asia/Shanghai
+    // The built-in data knows 10/11 is a 调休 workday, not an ordinary weekend.
+    const makeupSaturday = Date.parse('2025-10-11T02:00:00Z') // Saturday 10:00 Asia/Shanghai
+
+    const holidaySchedule: ScheduleConfig = {
+      models: [{ provider: 'p', model: ANALYSIS_MODEL.model, disabledWindows: HOLIDAY_WINDOWS }],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: 'Asia/Shanghai',
+    }
+    const holidayHarness = await createHarness({ schedule: holidaySchedule, clock: { value: NATIONAL_DAY } })
+    const holidayMate = createMate('mate_holiday', 'Holiday', ANALYSIS_MODEL)
+    await holidayHarness.store.putMate(holidayMate)
+    const holidayReq = await createRequirement(holidayHarness, holidayMate.id, 'HOLIDAY')
+    await holidayHarness.app.waitForBackground()
+    const holidayQueue = holidayHarness.store.getRequirement(holidayReq.id)?.queue
+    expect(holidayQueue?.window).toBe('holiday 00:00-12:00')
+    // Blocked for the whole 10/1-10/8 holiday range; the next open minute is 10/9 00:00 local.
+    expect(holidayQueue?.nextWakeAt).toBe(Date.parse('2025-10-08T16:00:00Z'))
+    expect(holidayHarness.analyzed).toEqual([])
+
+    // A 调休 Saturday resolves to the weekday branch: the weekday window blocks
+    // it and the weekend window does not.
+    const workdaySchedule: ScheduleConfig = {
+      models: [{
+        provider: 'p',
+        model: ANALYSIS_MODEL.model,
+        disabledWindows: [WORKDAY_MORNING, { kind: 'weekend', start: '00:00', end: '23:59' }],
+      }],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: 'Asia/Shanghai',
+    }
+    const workdayHarness = await createHarness({ schedule: workdaySchedule, clock: { value: makeupSaturday } })
+    const workdayMate = createMate('mate_workday', 'Workday', ANALYSIS_MODEL)
+    await workdayHarness.store.putMate(workdayMate)
+    const workdayReq = await createRequirement(workdayHarness, workdayMate.id, 'WORKDAY')
+    await workdayHarness.app.waitForBackground()
+    expect(workdayHarness.store.getRequirement(workdayReq.id)?.queue?.window).toBe('weekday 00:00-12:00')
+
+    // Data load failure: no throw, weekend-only judgement, one degradation log.
+    const degraded = await createHarness({
+      schedule: holidaySchedule,
+      clock: { value: NATIONAL_DAY },
+      holidayData: null,
+    })
+    const degradedMate = createMate('mate_degraded', 'Degraded', ANALYSIS_MODEL)
+    await degraded.store.putMate(degradedMate)
+    await createRequirement(degraded, degradedMate.id, 'DEGRADED')
+    await degraded.app.waitForBackground()
+    expect(degraded.analyzed).toEqual(['DEGRADED'])
+    const degradationLogs = degraded.log.filter((line) => line.includes('falling back to weekend-only rules'))
+    expect(degradationLogs).toHaveLength(1)
+    expect(degradationLogs[0]).toContain('[dsh-mate] holidays:')
+
+    // Data present but missing the judged year: same fallback, year named.
+    const missingYear = await createHarness({
+      schedule: holidaySchedule,
+      clock: { value: NATIONAL_DAY },
+      holidayData: { years: {}, source: 'test-data' },
+    })
+    const missingMate = createMate('mate_missing', 'Missing', ANALYSIS_MODEL)
+    await missingYear.store.putMate(missingMate)
+    await createRequirement(missingYear, missingMate.id, 'MISSING')
+    await missingYear.app.waitForBackground()
+    expect(missingYear.analyzed).toEqual(['MISSING'])
+    expect(missingYear.log.some((line) => line.includes('no built-in holiday data for 2025'))).toBe(true)
   })
 })

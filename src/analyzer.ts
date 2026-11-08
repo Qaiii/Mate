@@ -33,6 +33,14 @@ export interface AnalyzeSessionCandidate {
   updatedAt: number
 }
 
+export interface AnalyzeContinuation {
+  number: number
+  title: string
+  brief: string
+  sessionId: string | null
+  resultSummary: string | null
+}
+
 export interface AnalyzeInput {
   requirement: Pick<RequirementView, 'title' | 'brief' | 'projectPath' | 'projectTitle' | 'discussion'>
   mate: MateView
@@ -40,6 +48,8 @@ export interface AnalyzeInput {
   models: Array<{ provider: string; name: string; models: Array<{ id: string; name: string }> }>
   /** Idle Mate sessions in the target project that this requirement may continue. */
   sessions: AnalyzeSessionCandidate[]
+  /** Set when this requirement was added as a supplement of another one. */
+  continuation?: AnalyzeContinuation
   language: string
   maxTokens: number
   signal?: AbortSignal
@@ -88,7 +98,7 @@ Rules:
 - "subTasks" are the concrete work items an implementing agent should do, 1-8 items, each with a verifiable acceptance point.
 - "splitSuggestion" is non-empty ONLY when the requirement is too large for one session; give 2-6 independent child requirements that could each be dispatched separately. You own this decision; the user does not configure it.
 - "suggestedProjectPath" must be one of the listed project paths, or null.
-- "reuseSessionId": when the requirement is a follow-up of one of the existing sessions listed below (same module, same feature, a fix/extension of that work), set it to that sessionId; otherwise null. Only use ids from the list; never invent one.
+- "reuseSessionId": when the requirement is a follow-up of one of the existing sessions listed below (same module, same feature, a fix/extension of that work, or a supplement continuing its parent), set it to that sessionId; otherwise null. Only use ids from the list; never invent one.
 - "sessionModel" is the model route the implementing session should use, or null to keep the default. When a dispatch model restriction is listed below, pick one of those entries and keep its provider, model and reasoningEffort; otherwise pick from the listed catalog. The user did not choose it; you decide.
 - "priority" is "low", "normal" or "high", judged from the request and its urgency; the user does not set it.
 - Never wrap the JSON in markdown fences.`
@@ -185,6 +195,18 @@ function discussionBlock(entries: RequirementView['discussion']): string {
 }
 
 /** First balanced JSON object in `text`, tolerating fences and leading prose. */
+export function followUpBlock(continuation: AnalyzeContinuation | undefined): string[] {
+  if (continuation === undefined) return []
+  return [
+    '# Follow-up context',
+    `This requirement supplements #${continuation.number} "${continuation.title}".`,
+    `Parent brief: ${continuation.brief.slice(0, 800)}`,
+    ...(continuation.resultSummary === null ? [] : [`Parent review: ${continuation.resultSummary.slice(0, 800)}`]),
+    ...(continuation.sessionId === null ? [] : [`Parent session: ${continuation.sessionId}`]),
+    'When the follow-up continues that work, prefer reusing the parent session if it is in the candidate list; otherwise reuseSessionId must be null.',
+  ]
+}
+
 export function extractJsonObject(text: string): string | null {
   const start = text.indexOf('{')
   if (start < 0) return null
@@ -332,6 +354,8 @@ export class MateAnalyzer {
           'Models available for the implementing session (provider: model ids):',
           modelsBlock(input.models),
         ]),
+      '',
+      followUpBlock(input.continuation),
       '',
       input.sessions.length > 0
         ? [

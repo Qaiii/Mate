@@ -454,6 +454,38 @@ export const STYLES = `
   font-size: 11.5px;
   color: var(--dsw-alias-label-secondary, #4b5563);
 }
+/* The requirement story: numbered steps, sub-headings, and the session /
+   follow-up rows that let one requirement read as a sequence of cycles. */
+.mate-section > h3 { display: flex; align-items: center; gap: 6px; }
+.mate-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%; flex: none;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary, #0f1115) 8%, transparent);
+  color: var(--dsw-alias-label-primary, #0f1115);
+  font-size: 10px; font-weight: 700; letter-spacing: 0; text-transform: none;
+}
+.mate-subhead { margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--dsw-alias-label-secondary, #4b5563); }
+.mate-cycles { display: flex; flex-direction: column; gap: 6px; }
+.mate-cycle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 9px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.2));
+}
+.mate-cycle-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+  background: none; border: none; padding: 0; cursor: pointer; text-align: left;
+  font: inherit; color: var(--dsw-alias-label-primary, #0f1115);
+}
+.mate-cycle-main:hover .mate-cycle-title { text-decoration: underline; }
+.mate-cycle-title {
+  font-size: 12.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mate-cycle-meta {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  font-size: 11px; color: var(--dsw-alias-label-secondary, #4b5563);
+}
+.mate-hint { font-size: 11.5px; color: var(--dsw-alias-label-secondary, #4b5563); }
 `
 
 export function Spinner(): React.ReactElement {

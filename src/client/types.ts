@@ -1,5 +1,6 @@
 import type { MateState, MateController } from './controller.js'
 import type { Translator } from './locales.js'
+import { formatZonedClock } from './scheduleDraft.js'
 import type { ProjectSource, QueueEntryView, RequirementView } from '../shared.js'
 
 /** Why a requirement needs the user's attention, if it does. */
@@ -85,14 +86,25 @@ export function formatCountdown(timestamp: number, lang: 'zh' | 'en'): string {
 }
 
 /**
- * Compact board/list hint for a requirement waiting on a model window. Returns
- * `null` for everything that is not queued, so callers can render unconditionally.
+ * Compact board/list hint for a requirement waiting on a model window. Shows
+ * the expected start clock in the effective scheduling `timezone`, falling back
+ * to the plain badge when the wake time or its clock formatting is unknown.
+ * Returns `null` for everything that is not `queued` (a stale `queue` object on
+ * a cancelled/failed row must never render a queue badge).
  */
-export function queueHint(requirement: RequirementView, t: Translator, lang: 'zh' | 'en'): string | null {
-  if (requirement.status !== 'queued' && requirement.queue == null) return null
+export function queueHint(
+  requirement: RequirementView,
+  t: Translator,
+  lang: 'zh' | 'en',
+  timezone?: string,
+): string | null {
+  if (requirement.status !== 'queued') return null
   const queue = requirement.queue
   if (queue == null) return t('queue.badge')
   if (queue.nextWakeAt !== null && Number.isFinite(queue.nextWakeAt) && queue.nextWakeAt > 0) {
+    const zone = timezone !== undefined && timezone.trim() !== '' ? timezone : queue.timezone
+    const clock = formatZonedClock(queue.nextWakeAt, zone, lang)
+    if (clock !== '') return `${t('queue.badgeQueued')} · ${t('queue.startsAt', { clock })}`
     return `${t('queue.badge')} · ${t('queue.resumeIn', { time: formatCountdown(queue.nextWakeAt, lang) })}`
   }
   return t('queue.badge')

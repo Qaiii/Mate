@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { ScheduleConfig } from '../shared.js'
 import { createTranslator } from './locales.js'
 import {
+  catalogAvailability,
   cloneSchedule,
   emptyScheduleDraft,
   expandHolidayRange,
   expandYearHolidays,
+  formatZonedClock,
   groupHolidays,
   isRealDateKey,
   issueMessage,
@@ -15,6 +17,7 @@ import {
   removeHolidayDates,
   removeHolidayYear,
   toggleWeekday,
+  tryResolveHolidayCalendar,
   windowKindChoice,
   withWindowKind,
 } from './scheduleDraft.js'
@@ -128,18 +131,126 @@ describe('draft cloning', () => {
     const source: ScheduleConfig = {
       models: [{ provider: 'p', model: 'm', disabledWindows: [{ kind: ['mon'], start: '22:00', end: '06:00' }] }],
       holidays: ['2026-01-01'],
+      workdays: ['2026-01-04'],
+      useBuiltinHolidays: false,
       timezone: 'Asia/Shanghai',
     }
     const copy = cloneSchedule(source)
     const kind = copy.models[0]?.disabledWindows[0]?.kind
     if (Array.isArray(kind)) kind.push('tue')
     copy.holidays.push('2026-02-01')
+    copy.workdays.push('2026-02-08')
     expect(source.models[0]?.disabledWindows[0]?.kind).toEqual(['mon'])
     expect(source.holidays).toEqual(['2026-01-01'])
+    expect(source.workdays).toEqual(['2026-01-04'])
+    expect(copy.useBuiltinHolidays).toBe(false)
   })
 
   it('tolerates a missing schedule from an older Host', () => {
     expect(cloneSchedule(undefined)).toEqual(emptyScheduleDraft())
+  })
+
+  it('fills the new fields for a pre-feature schedule', () => {
+    const legacy = { models: [], holidays: ['2026-01-01'], timezone: null } as unknown as ScheduleConfig
+    const copy = cloneSchedule(legacy)
+    expect(copy.workdays).toEqual([])
+    // The built-in statutory-holiday data is on unless the snapshot says otherwise.
+    expect(copy.useBuiltinHolidays).toBe(true)
+  })
+})
+
+describe('formatZonedClock', () => {
+  it('formats the instant in the scheduling zone with a 24h clock', () => {
+    // 2026-01-01T16:30Z is 2026-01-02 00:30 in Shanghai (UTC+8).
+    expect(formatZonedClock(Date.UTC(2026, 0, 1, 16, 30), 'Asia/Shanghai')).toBe('00:30')
+    expect(formatZonedClock(Date.UTC(2026, 0, 1, 16, 30), 'UTC')).toBe('16:30')
+    expect(formatZonedClock(Date.UTC(2026, 0, 1, 0, 5), 'Asia/Shanghai', 'zh')).toBe('08:05')
+  })
+
+  it('returns an empty string for an unusable timestamp', () => {
+    expect(formatZonedClock(0, 'Asia/Shanghai')).toBe('')
+    expect(formatZonedClock(-1, 'UTC')).toBe('')
+    expect(formatZonedClock(Number.NaN, 'UTC')).toBe('')
+  })
+
+  it('falls back gracefully for an unknown zone instead of throwing', () => {
+    expect(formatZonedClock(Date.UTC(2026, 0, 1, 16, 30), 'Not/AZone')).toMatch(/^\d{2}:\d{2}$/)
+    expect(formatZonedClock(Date.UTC(2026, 0, 1, 16, 30), '')).toMatch(/^\d{2}:\d{2}$/)
+  })
+})
+
+describe('catalog availability summary', () => {
+  const catalog = [{ provider: 'alpha', models: [{ id: 'm1' }, { id: 'm2' }] }]
+
+  it('returns null with nothing to judge', () => {
+    expect(catalogAvailability({ nowMs: 1, schedule: emptyScheduleDraft(), catalog: [], timezone: 'UTC' })).toBeNull()
+    expect(catalogAvailability({
+      nowMs: 0,
+      schedule: emptyScheduleDraft(),
+      catalog,
+      timezone: 'UTC',
+    })).toBeNull()
+  })
+
+  it('counts available routes and the unknown state is silent', () => {
+    const summary = catalogAvailability({ nowMs: 1, schedule: emptyScheduleDraft(), catalog, timezone: 'UTC' })
+    expect(summary).toEqual({ total: 2, available: 2, earliestStart: null })
+  })
+
+  it('reports the earliest next start when every route is blocked', () => {
+    const nowMs = Date.UTC(2026, 9, 1, 4, 0) // 2026-10-01 12:00 Asia/Shanghai, a built-in holiday
+    // Two holiday windows cover the whole day (00:00-23:59 leaves 23:59 open).
+    const holidayWindows = [
+      { kind: 'holiday' as const, start: '00:00', end: '23:59' },
+      { kind: 'holiday' as const, start: '23:59', end: '00:00' },
+    ]
+    const schedule: ScheduleConfig = {
+      models: ['m1', 'm2'].map((model) => ({ provider: 'alpha', model, disabledWindows: holidayWindows })),
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: null,
+    }
+    const summary = catalogAvailability({ nowMs, schedule, catalog, timezone: 'Asia/Shanghai' })
+    // Built-in holidays end 2026-10-07, so the first available minute is
+    // 2026-10-08 00:00 Shanghai = 2026-10-07T16:00Z.
+    expect(summary).toEqual({
+      total: 2,
+      available: 0,
+      earliestStart: Date.UTC(2026, 9, 7, 16, 0),
+    })
+  })
+
+  it('applies the manual makeup-workday override on a weekend', () => {
+    const nowMs = Date.UTC(2026, 9, 10, 4, 0) // 2026-10-10 12:00 Asia/Shanghai (Saturday, a 调休 workday)
+    const schedule: ScheduleConfig = {
+      models: [{
+        provider: 'alpha',
+        model: 'm1',
+        disabledWindows: [{ kind: 'weekend', start: '00:00', end: '23:59' }],
+      }],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: null,
+    }
+    const calendar = tryResolveHolidayCalendar(schedule)
+    expect(calendar).not.toBeNull()
+    // The built-in 调休 data turns this Saturday into a working day, so the
+    // weekend window does not block it.
+    expect(calendar?.workdays.has('2026-10-10')).toBe(true)
+    const summary = catalogAvailability({ nowMs, schedule, catalog: [{ provider: 'alpha', models: [{ id: 'm1' }] }], timezone: 'Asia/Shanghai' })
+    expect(summary).toEqual({ total: 1, available: 1, earliestStart: null })
+
+    // With the built-in data off it is an ordinary blocked weekend.
+    const weekendOnly = catalogAvailability({
+      nowMs,
+      schedule: { ...schedule, useBuiltinHolidays: false },
+      catalog: [{ provider: 'alpha', models: [{ id: 'm1' }] }],
+      timezone: 'Asia/Shanghai',
+    })
+    expect(weekendOnly?.available).toBe(0)
+    expect(weekendOnly?.earliestStart).not.toBeNull()
   })
 })
 

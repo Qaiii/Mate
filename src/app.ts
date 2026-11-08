@@ -1,4 +1,4 @@
-import type { AnalyzeSessionCandidate, MateAnalyzer, ProjectOption } from './analyzer.js'
+import type { AnalyzeContinuation, AnalyzeSessionCandidate, MateAnalyzer, ProjectOption } from './analyzer.js'
 import { Dispatcher, type SessionControllerLike, type SessionSummaryLike, type WorkspaceControllerLike } from './dispatch.js'
 import { randomUUID } from 'node:crypto'
 import { emptyScheduleConfig, newMateId, newRequirementId, shortId, type MateStore } from './store.js'
@@ -127,6 +127,8 @@ export class MateApp {
   private queueChain: Promise<unknown> = Promise.resolve()
   /** Holiday-degradation log keys already emitted (once per missing scope). */
   private readonly holidayWarnings = new Set<string>()
+  /** Requirement ids with a wake/re-judge pass in flight (reentrancy guard). */
+  private readonly queueProcessing = new Set<string>()
   private readonly dispatcher: Dispatcher
   private workspaceController: WorkspaceControllerLike | null
   private readonly clock: () => number
@@ -217,6 +219,9 @@ export class MateApp {
       const settings = this.deps.store.settings()
       if (settings.clientTimeZone !== reportedZone) {
         await this.deps.store.updateSettings({ clientTimeZone: reportedZone })
+        // The scheduling zone changed: stored queue wake instants were computed
+        // in the old zone, so re-judge every waiting requirement now.
+        await this.reevaluateQueue()
       }
     }
     const rev = typeof request?.rev === 'number' ? request.rev : undefined
@@ -270,6 +275,7 @@ export class MateApp {
       case COMMANDS.requirementRedispatch: return this.redispatchRequirement(args)
       case COMMANDS.requirementSplit: return this.splitRequirement(args)
       case COMMANDS.requirementAddChild: return this.addChild(args)
+    case COMMANDS.requirementSupplement: return this.supplementRequirement(args)
       case COMMANDS.requirementDelete: return this.deleteRequirement(args)
       case COMMANDS.requirementAdoptSession: return this.adoptSession(args)
       case COMMANDS.requirementResolveProject: return this.resolveProject(args)
@@ -535,6 +541,9 @@ export class MateApp {
     const next = await this.deps.store.mutateRequirement(id, (current) => ({
       ...current,
       status: 'analyzing',
+      // Re-analysis leaves the waiting queue: a stale queue entry must never
+      // render a queue badge on a requirement that is no longer queued.
+      queue: null,
       errors: current.errors.filter((error) => error.phase !== 'analyze'),
     }))
     this.scheduleAnalysis(id)
@@ -549,6 +558,7 @@ export class MateApp {
       ...current,
       discussion: [...current.discussion, { role: 'user', text: text.slice(0, 8000), at: Date.now() }],
       status: 'analyzing',
+      queue: null,
       errors: current.errors.filter((error) => error.phase !== 'analyze'),
     }))
     this.scheduleAnalysis(id)
@@ -595,6 +605,7 @@ export class MateApp {
         : current.discussion,
       result: null,
       status: 'approved',
+      queue: null,
       plan: current.plan === null ? null : { ...current.plan, at: Date.now() },
     }))
     this.scheduleDispatch(id)
@@ -606,6 +617,7 @@ export class MateApp {
     return this.deps.store.mutateRequirement(id, (current) => ({
       ...current,
       status: 'done',
+      queue: null,
       errors: current.errors.filter((error) => error.phase !== 'monitor'),
     }))
   }
@@ -617,6 +629,8 @@ export class MateApp {
     const next = await this.deps.store.mutateRequirement(id, (current) => ({
       ...current,
       status: 'cancelled',
+      // A cancelled requirement is no longer waiting for a model window.
+      queue: null,
     }))
     if (typeof sessionId === 'string') await this.dispatcher.cancel(sessionId)
     return next
@@ -633,6 +647,9 @@ export class MateApp {
       status: 'approved',
       result: null,
       dispatch: null,
+      // Drop the old waiting entry; a blocked dispatch phase re-creates a fresh
+      // one with its own enqueue time and expected start.
+      queue: null,
       errors: current.errors.filter((error) => error.phase !== 'dispatch'),
     }))
     this.scheduleDispatch(id)
@@ -681,6 +698,8 @@ export class MateApp {
       kind: 'goal',
       status: 'running',
       dispatch: null,
+      // A goal parent never waits in the model queue; its children do.
+      queue: null,
     }))
     for (const child of created) this.scheduleAnalysis(child.id)
     return [updatedParent, ...created]
@@ -722,6 +741,43 @@ export class MateApp {
     return this.splitRequirement({ id: args.id, items })
   }
 
+  /**
+   * Add a follow-up requirement under an existing one. Unlike `split`, the
+   * parent keeps its status, session and review: the supplement starts a fresh
+   * analysis -> dispatch -> review cycle of its own.
+   */
+  private async supplementRequirement(args: Record<string, unknown>): Promise<RequirementView> {
+    const id = requiredString(args.id, 'id-required', 'Requirement id is required')
+    const parent = this.requireRequirement(id)
+    const brief = requiredString(args.brief, 'brief-required', 'A follow-up description is required')
+    const title = optionalString(args.title).slice(0, 200) || firstLineTitle(brief)
+    const mate = this.deps.store.getMate(parent.mateId)
+    const now = Date.now()
+    const child: RequirementView = {
+      ...parent,
+      id: newRequirementId(),
+      number: await this.deps.store.nextNumber(),
+      title,
+      brief: brief.slice(0, 20000),
+      parentId: parent.id,
+      kind: 'requirement',
+      status: 'draft',
+      analysis: null,
+      plan: null,
+      dispatch: null,
+      result: null,
+      errors: [],
+      discussion: [],
+      createdAt: now,
+      updatedAt: now,
+      rev: 1,
+      mateName: mate?.name ?? parent.mateName,
+      mateModel: mate ? `${mate.model.provider}/${mate.model.model}` : parent.mateModel,
+    }
+    await this.deps.store.putRequirement(child)
+    this.scheduleAnalysis(child.id)
+    return child
+  }
   /** Settle a manual-vs-suggested project conflict and dispatch. */
   private async resolveProject(args: Record<string, unknown>): Promise<RequirementView> {
     const id = requiredString(args.id, 'id-required', 'Requirement id is required')
@@ -939,6 +995,7 @@ export class MateApp {
         projects,
         models: this.cachedCatalog,
         sessions: candidates,
+        ...this.continuationContext(requirement),
         language: this.language,
         maxTokens: DEFAULT_TARGETS.analysis,
       })
@@ -1341,9 +1398,21 @@ export class MateApp {
    * clock. Still blocked → store the fresh `nextWakeAt` (bumping attempts) and
    * re-arm; available → clear the queue entry, restore the phase's entry status
    * and run that phase again. A requirement whose status is no longer `queued`
-   * (including `running`) is left untouched.
+   * (including `running`) is left untouched. A per-requirement guard makes
+   * overlapping paths (wake timer, startup recovery, settings save) harmless.
    */
   async processQueued(queued: RequirementView): Promise<void> {
+    if (this.lifetime.signal.aborted) return
+    if (this.queueProcessing.has(queued.id)) return
+    this.queueProcessing.add(queued.id)
+    try {
+      await this.processQueuedOnce(queued)
+    } finally {
+      this.queueProcessing.delete(queued.id)
+    }
+  }
+
+  private async processQueuedOnce(queued: RequirementView): Promise<void> {
     if (this.lifetime.signal.aborted) return
     const requirement = this.deps.store.getRequirement(queued.id)
     if (requirement === undefined || requirement.queue == null) return
@@ -1430,24 +1499,21 @@ export class MateApp {
 
   /**
    * Startup recovery: re-read the persisted FIFO queue after a Host restart and
-   * resume every entry whose wake instant already passed (or is unknown); arm
-   * the timer for the rest. Called once after `markStarted()`.
+   * re-judge every entry. A due entry (or one whose stored wake instant already
+   * passed) resumes immediately; a still-blocked entry has its expected start
+   * recomputed from the persisted schedule instead of trusting a possibly stale
+   * stored instant. Called once after `markStarted()`.
    */
   async resume(): Promise<void> {
     if (this.lifetime.signal.aborted) return
     // Surface a missing holiday-data year at startup, even with an empty queue.
     this.holidayDiagnostics()
-    const now = this.now()
     for (const requirement of this.deps.store.queuedRequirements()) {
-      const entry = requirement.queue
-      if (entry == null) continue
-      if (entry.nextWakeAt === null || entry.nextWakeAt <= now) {
-        try {
-          await this.processQueued(requirement)
-        } catch (error) {
-          // A broken queue entry must not abort Host startup; the rest is tried.
-          this.deps.log(`[dsh-mate] queue: resuming requirement ${requirement.id} failed: ${String(error)}`)
-        }
+      try {
+        await this.processQueued(requirement)
+      } catch (error) {
+        // A broken queue entry must not abort Host startup; the rest is tried.
+        this.deps.log(`[dsh-mate] queue: resuming requirement ${requirement.id} failed: ${String(error)}`)
       }
     }
     this.queue.refresh()
@@ -1548,6 +1614,8 @@ export class MateApp {
       await this.deps.store.mutateRequirement(id, (current) => ({
         ...current,
         status: current.status === 'running' ? current.status : 'failed',
+        // A failure ends the waiting state; never leave a stale queue entry.
+        queue: current.status === 'running' ? current.queue ?? null : null,
         errors: [...current.errors, { at: Date.now(), phase, code, message: message.slice(0, 1000) }].slice(-20),
       }))
     } catch (inner) {
@@ -1582,6 +1650,21 @@ export class MateApp {
     }))
   }
 
+  /** Parent context for a supplementary requirement, when it has one. */
+  private continuationContext(requirement: RequirementView): { continuation?: AnalyzeContinuation } {
+    if (requirement.parentId === null) return {}
+    const parent = this.deps.store.getRequirement(requirement.parentId)
+    if (parent === undefined) return {}
+    return {
+      continuation: {
+        number: parent.number,
+        title: parent.title,
+        brief: parent.brief,
+        sessionId: parent.dispatch?.sessionId ?? null,
+        resultSummary: parent.result?.doneSummary ?? null,
+      },
+    }
+  }
   /** Idle Mate sessions in one project a new requirement could continue. */
   private async reuseCandidates(projectPath: string): Promise<AnalyzeSessionCandidate[]> {
     if (projectPath.length === 0) return []
@@ -1896,3 +1979,5 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
+

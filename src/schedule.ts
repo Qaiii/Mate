@@ -409,8 +409,10 @@ export function workdaySetOf(
  * - no entry or no windows: `available: true`, `reason: 'no-config'`;
  * - invalid `timezone`: fall back to UTC rather than throwing;
  * - `nextAvailableAt` is `null` when available, otherwise the first aligned
- *   minute after `now` at which the model is available (scan at most 8 days;
- *   `null` when the configuration disables every minute of every day).
+ *   minute after `now` at which the model is available (scan at most 12 days;
+ *   whole blocked local days are skipped in one step so a long holiday window
+ *   stays cheap; `null` when the configuration disables every minute of every
+ *   day in that horizon).
  */
 export function isModelAvailable(
   nowMs: number,
@@ -540,8 +542,10 @@ export function describeWindow(window: DisabledWindow): string {
 const MINUTES_PER_DAY = 24 * 60
 /** Extra "day" bit that keeps holiday windows in a family of their own. */
 const HOLIDAY_DAY_BIT = 7
-/** Whole minutes scanned forward by `nextAvailableAt` (the contract cap: 8 days). */
-const MAX_SCAN_MINUTES = 8 * 24 * 60
+/** Days scanned forward by `nextAvailableAt`; covers the longest (9-day) holiday. */
+export const MAX_SCAN_DAYS = 12
+/** Whole minutes scanned forward by `nextAvailableAt` (the contract cap). */
+const MAX_SCAN_MINUTES = MAX_SCAN_DAYS * 24 * 60
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
@@ -706,13 +710,64 @@ function firstAvailableAt(
   workdays: ReadonlySet<string>,
 ): number | null {
   const firstMinute = Math.floor(nowMs / 60_000) + 1
-  for (let offset = 0; offset < MAX_SCAN_MINUTES; offset += 1) {
+  let offset = 0
+  while (offset < MAX_SCAN_MINUTES) {
     const candidate = (firstMinute + offset) * 60_000
     const parts = localPartsWith(formatter, candidate)
     if (parts === null) return null
     if (blockingWindowAt(parts, windows, holidays, workdays) === null) return candidate
+    // A local day whose every minute is blocked cannot contain an answer, so
+    // skip to the next local midnight in one step instead of scanning 1440
+    // blocked minutes. Verify the jump lands exactly on the next midnight; on a
+    // DST transition (offset change) fall back to a one-minute step.
+    const jump = wholeDayBlocked(parts, windows, holidays, workdays)
+      ? nextLocalMidnightJump(parts, formatter, firstMinute + offset)
+      : 1
+    offset += jump
   }
   return null
+}
+
+/**
+ * Minutes from `parts`' instant to the next local midnight, but only when a
+ * minute-granularity jump lands exactly on 00:00 of a later local date.
+ * Otherwise returns 1 (the caller scans minute by minute for correctness across
+ * timezone-offset transitions).
+ */
+function nextLocalMidnightJump(
+  parts: LocalParts,
+  formatter: Intl.DateTimeFormat,
+  candidateMinute: number,
+): number {
+  const jump = MINUTES_PER_DAY - (parts.hour * 60 + parts.minute)
+  if (jump <= 1) return 1
+  const target = localPartsWith(formatter, (candidateMinute + jump) * 60_000)
+  if (target === null) return 1
+  if (target.hour === 0 && target.minute === 0 && target.dateKey !== parts.dateKey) return jump
+  return 1
+}
+
+/** True when every minute of the local day is disabled for this day's branch. */
+function wholeDayBlocked(
+  parts: LocalParts,
+  windows: readonly DisabledWindow[],
+  holidays: ReadonlySet<string>,
+  workdays: ReadonlySet<string>,
+): boolean {
+  const branch = branchAt(parts, holidays, workdays)
+  const ranges: MinuteRange[] = []
+  for (const window of windows) {
+    if (windowMatchesDay(window, branch, parts.weekday)) ranges.push(...minuteRanges(window))
+  }
+  if (ranges.length === 0) return false
+  ranges.sort((left, right) => left[0] - right[0])
+  let reach = 0
+  for (const [from, to] of ranges) {
+    if (from > reach) return false
+    if (to > reach) reach = to
+    if (reach >= MINUTES_PER_DAY) return true
+  }
+  return reach >= MINUTES_PER_DAY
 }
 
 function toHolidaySet(holidays: ReadonlySet<string> | readonly string[]): Set<string> {

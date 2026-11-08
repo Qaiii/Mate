@@ -52,17 +52,31 @@ function renderSettings(snapshot: Snapshot, lang: 'zh' | 'en' = 'zh'): string {
   )
 }
 
+/** The rendered `<input type="checkbox">` whose `aria-label` is `label`. */
+function checkboxWithAria(markup: string, label: string): string {
+  const tags = [...markup.matchAll(/<input[^>]*type="checkbox"[^>]*>/g)].map((match) => match[0] ?? '')
+  return tags.find((tag) => tag.includes(`aria-label="${label}"`)) ?? ''
+}
+
 const windowed: ScheduleConfig = {
   models: [
     { provider: 'alpha', model: 'm1', disabledWindows: [{ kind: 'weekday', start: '22:00', end: '06:00' }] },
     { provider: 'alpha', model: 'm2', disabledWindows: [] },
   ],
   holidays: ['2026-10-01', '2026-01-01'],
+  workdays: [],
+  useBuiltinHolidays: true,
   timezone: null,
 }
 
 /** A schedule that never blocks; keeps the compression tests focused. */
-const emptySchedule: ScheduleConfig = { models: [], holidays: [], timezone: null }
+const emptySchedule: ScheduleConfig = {
+  models: [],
+  holidays: [],
+  workdays: [],
+  useBuiltinHolidays: true,
+  timezone: null,
+}
 
 describe('SettingsDialog scheduling sections', () => {
   it('shows the effective zone, its source and the override field', () => {
@@ -87,10 +101,10 @@ describe('SettingsDialog scheduling sections', () => {
   })
 
   it('shows both versions of the always-available copy for an empty schedule', () => {
-    const markup = renderSettings(snapshotWith({ models: [], holidays: [], timezone: null }))
+    const markup = renderSettings(snapshotWith(emptySchedule))
     expect(markup).toContain('还没有配置模型时段')
     expect(markup).toContain('全天可用')
-    const en = renderSettings(snapshotWith({ models: [], holidays: [], timezone: null }), 'en')
+    const en = renderSettings(snapshotWith(emptySchedule), 'en')
     expect(en).toContain('Always available')
     expect(en).toContain('No model windows configured')
   })
@@ -105,10 +119,53 @@ describe('SettingsDialog scheduling sections', () => {
     expect(markup).toContain('按年份批量')
   })
 
+  it('renders the built-in holiday toggle checked by default', () => {
+    const markup = renderSettings(snapshotWith(emptySchedule))
+    expect(markup).toContain('启用内置中国法定节假日（含调休）')
+    expect(markup).toContain('内置数据按年份覆盖')
+    expect(checkboxWithAria(markup, '启用内置中国法定节假日（含调休）')).toContain('checked=""')
+
+    const off = renderSettings(snapshotWith({ ...emptySchedule, useBuiltinHolidays: false }))
+    expect(checkboxWithAria(off, '启用内置中国法定节假日（含调休）')).not.toContain('checked')
+
+    const en = renderSettings(snapshotWith(emptySchedule), 'en')
+    expect(en).toContain('Use built-in Chinese statutory holidays (incl. makeup workdays)')
+  })
+
+  it('offers the makeup-workday editor with grouped per-year/per-date delete controls', () => {
+    const markup = renderSettings(snapshotWith({ ...windowed, workdays: ['2026-02-14', '2026-10-10'] }))
+    expect(markup).toContain('调休上班日')
+    expect(markup).toContain('调休上班日按工作日判定')
+    expect(markup).toContain('2026-02-14')
+    expect(markup).toContain('2026-10-10')
+    expect(markup).toContain('删除 2026-02-14')
+    expect(markup).toContain('删除 2026 年')
+    const en = renderSettings(snapshotWith({ ...windowed, workdays: ['2026-02-14'] }), 'en')
+    expect(en).toContain('Makeup workdays')
+    expect(en).toContain('Delete 2026-02-14')
+  })
+
+  it('blocks saving with a localized error for an invalid makeup workday', () => {
+    const markup = renderSettings(snapshotWith({ ...windowed, workdays: ['2026-02-30'] }))
+    expect(markup).toContain('调休上班日应为 YYYY-MM-DD 且真实存在')
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>保存<\/button>/)
+  })
+
+  it('localizes the new schedule validation codes', () => {
+    const zh = createTranslator('zh')
+    expect(zh('schedule.err.workday-format')).toContain('调休上班日')
+    expect(zh('schedule.err.holiday-toggle')).toContain('内置节假日开关')
+    const en = createTranslator('en')
+    expect(en('schedule.err.workday-format')).toContain('Makeup workday')
+    expect(en('schedule.err.holiday-toggle')).toContain('built-in holidays toggle')
+  })
+
   it('blocks saving with a localized error for a zero-length window', () => {
     const markup = renderSettings(snapshotWith({
       models: [{ provider: 'alpha', model: 'm1', disabledWindows: [{ kind: 'weekday', start: '22:00', end: '22:00' }] }],
       holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
       timezone: null,
     }))
     expect(markup).toContain('开始时间和结束时间不能相同')
@@ -116,13 +173,19 @@ describe('SettingsDialog scheduling sections', () => {
   })
 
   it('blocks saving and explains an invalid manual time zone', () => {
-    const markup = renderSettings(snapshotWith({ models: [], holidays: [], timezone: 'Not/AZone' }))
+    const markup = renderSettings(snapshotWith({
+      models: [],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: 'Not/AZone',
+    }))
     expect(markup).toContain('无效的 IANA 时区')
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>保存<\/button>/)
   })
 
   it('allows saving a valid empty schedule', () => {
-    const markup = renderSettings(snapshotWith({ models: [], holidays: [], timezone: null }))
+    const markup = renderSettings(snapshotWith(emptySchedule))
     expect(markup).toMatch(/<button[^>]*>保存<\/button>/)
   })
 })
@@ -135,7 +198,7 @@ describe('SettingsDialog context compression section', () => {
     expect(markup).toContain('阈值（%）')
     expect(markup).toContain('当派发要复用的会话上下文占用 ≥ 阈值时，先压缩')
     // Default policy: disabled, threshold 80, and the threshold cannot be edited.
-    expect(markup).not.toMatch(/<input[^>]*type="checkbox"[^>]*checked=""/)
+    expect(checkboxWithAria(markup, '启用上下文压缩')).not.toContain('checked')
     expect(markup).toMatch(/<input[^>]*type="number"[^>]*disabled=""[^>]*value="80"/)
 
     const en = renderSettings(snapshotWith(emptySchedule), 'en')
@@ -146,7 +209,7 @@ describe('SettingsDialog context compression section', () => {
 
   it('renders the saved values with an editable threshold when compression is on', () => {
     const markup = renderSettings(snapshotWith(emptySchedule, undefined, { enabled: true, threshold: 42 }))
-    expect(markup).toMatch(/<input[^>]*type="checkbox"[^>]*checked=""/)
+    expect(checkboxWithAria(markup, '启用上下文压缩')).toContain('checked=""')
     const threshold = markup.match(/<input[^>]*type="number"[^>]*>/)?.[0] ?? ''
     expect(threshold).toContain('value="42"')
     expect(threshold).not.toContain('disabled')
@@ -252,17 +315,33 @@ describe('queued requirement hints', () => {
     }
   })
 
-  it('renders the window badge with the local next-wake countdown', () => {
+  it('shows the expected start clock in the effective scheduling zone', () => {
     const now = Date.UTC(2026, 0, 1, 0, 0, 0)
-    const spy = vi.spyOn(Date, 'now').mockReturnValue(now)
-    try {
-      const hint = queueHint(queuedRequirement({
-        queue: { ...queuedRequirement().queue!, nextWakeAt: now + 2 * 3_600_000 + 5 * 60_000 },
-      }), createTranslator('zh'), 'zh')
-      expect(hint).toBe('等待模型时段 · 2 小时 5 分钟后恢复')
-    } finally {
-      spy.mockRestore()
-    }
+    const nextWakeAt = now + 2 * 3_600_000 + 5 * 60_000 // 2026-01-01 10:05 in Asia/Shanghai
+    const hint = queueHint(
+      queuedRequirement({ queue: { ...queuedRequirement().queue!, nextWakeAt } }),
+      createTranslator('zh'),
+      'zh',
+      'Asia/Shanghai',
+    )
+    expect(hint).toBe('排队等待 · 预计 10:05 开始')
+    const en = queueHint(
+      queuedRequirement({ queue: { ...queuedRequirement().queue!, nextWakeAt } }),
+      createTranslator('en'),
+      'en',
+      'Asia/Shanghai',
+    )
+    expect(en).toBe('Queued · starts ~10:05')
+  })
+
+  it('falls back to the queue entry zone when no effective zone is passed', () => {
+    const now = Date.UTC(2026, 0, 1, 0, 0, 0)
+    const hint = queueHint(
+      queuedRequirement({ queue: { ...queuedRequirement().queue!, nextWakeAt: now + 90_000 } }),
+      createTranslator('zh'),
+      'zh',
+    )
+    expect(hint).toBe('排队等待 · 预计 08:01 开始')
   })
 
   it('still renders a badge when the queue entry is missing or unknown', () => {

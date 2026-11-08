@@ -413,6 +413,7 @@ export const COMMANDS = {
   requirementRedispatch: 'requirement.redispatch',
   requirementSplit: 'requirement.split',
   requirementAddChild: 'requirement.addChild',
+  requirementSupplement: 'requirement.supplement',
   requirementDelete: 'requirement.delete',
   requirementAdoptSession: 'requirement.adoptSession',
   requirementResolveProject: 'requirement.resolveProject',
@@ -456,3 +457,4 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+

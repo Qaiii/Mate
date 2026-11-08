@@ -72,7 +72,7 @@ function snapshotWith(mates: MateView[], defaultMateId: string | null = null): S
       lastStartedAt: null,
       lastProjectPath: null,
       modelCatalog: [],
-      schedule: { models: [], holidays: [], timezone: null },
+      schedule: { models: [], holidays: [], workdays: [], useBuiltinHolidays: true, timezone: null },
       timezone: { id: 'UTC', source: 'host' },
       contextCompression: { enabled: false, threshold: 80 },
     },

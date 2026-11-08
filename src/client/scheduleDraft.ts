@@ -302,3 +302,137 @@ export function formatZonedDateTime(timestamp: number, timezone: string, lang?: 
     return new Date(timestamp).toLocaleString(locale)
   }
 }
+
+const clockFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function clockFormatterFor(timezone: string): Intl.DateTimeFormat | null {
+  const cached = clockFormatters.get(timezone)
+  if (cached !== undefined) return cached
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+    clockFormatters.set(timezone, formatter)
+    return formatter
+  } catch {
+    return null
+  }
+}
+
+function clockFromFormatter(formatter: Intl.DateTimeFormat, timestamp: number): string {
+  try {
+    const parts = formatter.formatToParts(new Date(timestamp))
+    let hour = ''
+    let minute = ''
+    for (const part of parts) {
+      if (part.type === 'hour') hour = part.value
+      else if (part.type === 'minute') minute = part.value
+    }
+    if (hour === '' || minute === '') return ''
+    return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * `HH:mm` of one instant in the scheduling `timezone` (the queue's expected
+ * start clock). Returns `''` for an unusable timestamp so the caller can fall
+ * back; an unknown zone degrades to the browser's local clock instead of
+ * throwing.
+ */
+export function formatZonedClock(timestamp: number, timezone: string, lang?: 'zh' | 'en'): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return ''
+  const zone = typeof timezone === 'string' ? timezone.trim() : ''
+  const formatter = zone === '' ? null : clockFormatterFor(zone)
+  if (formatter !== null) {
+    const formatted = clockFromFormatter(formatter, timestamp)
+    if (formatted !== '') return formatted
+  }
+  try {
+    const date = new Date(timestamp)
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+  } catch {
+    return ''
+  }
+}
+
+/** Aggregate live availability of every route in the model catalog. */
+export interface CatalogAvailability {
+  /** Routes judged (catalog size after de-duplication). */
+  total: number
+  /** Routes available at the judged instant. */
+  available: number
+  /** Earliest instant any unavailable route becomes available, when known. */
+  earliestStart: number | null
+}
+
+export interface CatalogAvailabilityInput {
+  /** Host server time (snapshot.serverTime), not the browser clock. */
+  nowMs: number
+  schedule: ScheduleConfig | null | undefined
+  catalog: ReadonlyArray<{ provider: string; models: ReadonlyArray<{ id: string }> }>
+  /** Effective scheduling zone, e.g. `settings.timezone.id`. */
+  timezone: string
+}
+
+/**
+ * Judge every catalog route with the pure availability API, folding in the
+ * effective holiday + makeup-workday calendar. `null` when there is nothing to
+ * judge (empty catalog / unusable instant) or the pure judge throws, so the
+ * panel can stay silent instead of crashing.
+ */
+export function catalogAvailability(input: CatalogAvailabilityInput): CatalogAvailability | null {
+  if (!Number.isFinite(input.nowMs) || input.nowMs <= 0) return null
+  const routes = catalogRoutes(input.catalog)
+  if (routes.length === 0) return null
+  try {
+    const calendar = resolveHolidayCalendar(input.schedule)
+    const judgements = modelAvailabilityAt({
+      nowMs: input.nowMs,
+      schedule: input.schedule,
+      routes,
+      timezone: input.timezone,
+      holidays: calendar.holidays,
+      workdays: calendar.workdays,
+    })
+    let available = 0
+    let earliestStart: number | null = null
+    for (const judgement of judgements) {
+      if (judgement.available) {
+        available += 1
+        continue
+      }
+      const at = judgement.nextAvailableAt
+      if (at !== null && Number.isFinite(at) && at > 0 && (earliestStart === null || at < earliestStart)) {
+        earliestStart = at
+      }
+    }
+    return { total: judgements.length, available, earliestStart }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Flatten the settings catalog into unique provider/model routes. The Host
+ * judges duplicate routes fine, but a badge should count each route once.
+ */
+function catalogRoutes(
+  catalog: ReadonlyArray<{ provider: string; models: ReadonlyArray<{ id: string }> }>,
+): Array<{ provider: string; model: string }> {
+  const seen = new Set<string>()
+  const routes: Array<{ provider: string; model: string }> = []
+  for (const group of catalog) {
+    for (const entry of group.models) {
+      const key = `${group.provider}\u0000${entry.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      routes.push({ provider: group.provider, model: entry.id })
+    }
+  }
+  return routes
+}

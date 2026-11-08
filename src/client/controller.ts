@@ -1,5 +1,6 @@
-import type { Snapshot } from '../shared.js'
+import { MAX_QUEUE_LENGTH, type Snapshot } from '../shared.js'
 import { fetchState, runCommand } from './api.js'
+import { createTranslator } from './locales.js'
 
 export interface Notice {
   kind: 'ok' | 'error'
@@ -23,6 +24,29 @@ export interface ControllerOptions {
 }
 
 type Listener = () => void
+
+/** Machine code the Host returns once the availability queue is full. */
+const QUEUE_FULL = 'queue-full'
+
+/** The stable machine code of one command failure, when it carries one. */
+export function commandErrorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' && code.length > 0 ? code : null
+}
+
+/**
+ * User-facing copy for one failed command. The Host's `queue-full` rejection is
+ * mapped onto localized copy here (the controller is the only place that sees
+ * the code before the notice is rendered); every other error keeps its own
+ * message unchanged.
+ */
+export function commandErrorMessage(error: unknown, language: () => string): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (commandErrorCode(error) !== QUEUE_FULL) return message
+  const lang = language().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  return createTranslator(lang)('queue.full', { max: MAX_QUEUE_LENGTH })
+}
 
 /**
  * React-free snapshot store: owns polling, a stable state object, and the
@@ -118,8 +142,7 @@ export class MateController {
       }
       return null
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.notify('error', message)
+      this.notify('error', commandErrorMessage(error, this.options.language))
       return null
     } finally {
       const busy = { ...this.state.busy }

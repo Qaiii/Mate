@@ -16,14 +16,28 @@ export interface DrawerProps {
   onClose: () => void
 }
 
-/** Full requirement detail: analysis, discussion, plan, execution, review. */
+/** One numbered heading in the requirement story. */
+function StepHeading({ step, label }: { step: number; label: string }): React.ReactElement {
+  return (
+    <h3>
+      <span className="mate-step-num">{step}</span>
+      {label}
+    </h3>
+  )
+}
+
+/**
+ * Full requirement detail as one story: the original ask, the analysis and
+ * discussion it produced, the sessions Mate dispatched with their review, and
+ * the supplements that repeat that loop.
+ */
 export function RequirementDrawer(props: DrawerProps): React.ReactElement {
   const { requirement, snapshot, controller, t, lang, openSession, onOpenRequirement, onClose } = props
   const [answer, setAnswer] = React.useState('')
+  const [supplement, setSupplement] = React.useState('')
   const [extra, setExtra] = React.useState(requirement.plan?.extraInstruction ?? '')
   const [target, setTarget] = React.useState(requirement.plan?.targetProjectPath ?? requirement.projectPath)
   const [mode, setMode] = React.useState<DispatchMode>(requirement.plan?.dispatchMode ?? 'auto')
-  const [childTitle, setChildTitle] = React.useState('')
   const busy = (key: string): boolean => controller.getSnapshot().busy[key] === true
 
   React.useEffect(() => {
@@ -34,7 +48,16 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
 
   const analysis = requirement.analysis
   const result = requirement.result
+  const parent = requirement.parentId === null
+    ? null
+    : snapshot.requirements.find((item) => item.id === requirement.parentId) ?? null
   const children = snapshot.requirements.filter((item) => item.parentId === requirement.id)
+  const dispatched = [
+    ...(requirement.dispatch === null ? [] : [{ key: requirement.id, label: `#${requirement.number} ${requirement.title}`, requirement }]),
+    ...children
+      .filter((child) => child.dispatch !== null)
+      .map((child) => ({ key: child.id, label: `#${child.number} ${child.title}`, requirement: child })),
+  ]
   // Only a confirm-mode requirement needs the user's gate; auto-mode Mates dispatch themselves.
   const canConfirm = requirement.autonomy === 'confirm'
     && (requirement.status === 'proposed' || requirement.status === 'clarifying' || requirement.status === 'failed')
@@ -44,10 +67,22 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
     void controller.run(key, command, { id: requirement.id, ...args })
   }
 
+  const acceptanceLine = (child: RequirementView): string | null => {
+    const review = child.result
+    if (review === null || review.acceptance.length === 0) return null
+    const met = review.acceptance.filter((item) => item.met).length
+    return t('drawer.acceptanceCount', { met, total: review.acceptance.length })
+  }
+
   return (
     <div className="mate-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <aside className="mate-drawer" role="dialog" aria-modal="true" aria-label={requirement.title}>
         <div className="mate-dialog-head">
+          {parent !== null ? (
+            <Button variant="ghost" onClick={() => onOpenRequirement(parent.id)} title={`#${parent.number} ${parent.title}`}>
+              ← #{parent.number}
+            </Button>
+          ) : null}
           <h2>#{requirement.number} {requirement.title}</h2>
           <Button variant="ghost" onClick={onClose} aria-label="close">✕</Button>
         </div>
@@ -72,6 +107,7 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
           <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
             {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
           </Badge>
+          {parent !== null ? <Badge tone="confirm">{t('badge.supplement')}</Badge> : null}
           <Badge tone="confirm">{t(projectSourceLabelKey(requirement.projectSource))}</Badge>
           {requirement.status === 'conflict' ? <Badge tone="warn">{t('status.conflict')}</Badge> : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
@@ -172,7 +208,14 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
         ) : null}
 
         <section className="mate-section">
-          <h3>{t('drawer.analysis')}</h3>
+          <StepHeading step={1} label={t('drawer.original')} />
+          <div className="mate-panel mate-prose">{requirement.brief}</div>
+        </section>
+
+        <section className="mate-section">
+          <StepHeading step={2} label={t('drawer.analysisSection')} />
+
+          <div className="mate-subhead">{t('drawer.analysis')}</div>
           {analysis === null ? (
             <div className="mate-panel mate-prose">
               {requirement.dispatch?.reused === true ? t('drawer.adoptedHint') : t('error.starting')}
@@ -206,12 +249,10 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
               ) : null}
             </div>
           )}
-        </section>
 
-        {analysis !== null && analysis.splitSuggestion.length > 0 && requirement.kind !== 'goal' ? (
-          <section className="mate-section">
-            <h3>{t('drawer.splitSuggestion')}</h3>
-            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {analysis !== null && analysis.splitSuggestion.length > 0 && requirement.kind !== 'goal' ? (
+            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+              <div className="mate-kv">{t('drawer.splitSuggestion')}</div>
               <ol className="mate-items">
                 {analysis.splitSuggestion.map((item, index) => (
                   <li key={index}>
@@ -236,20 +277,16 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
                 </Button>
               </div>
             </div>
-          </section>
-        ) : null}
+          ) : null}
 
-        {analysis !== null && analysis.questions.length > 0 ? (
-          <section className="mate-section">
-            <h3>{t('drawer.questions')}</h3>
-            <div className="mate-panel">
+          {analysis !== null && analysis.questions.length > 0 ? (
+            <div className="mate-panel" style={{ marginTop: 10 }}>
+              <div className="mate-kv" style={{ marginBottom: 4 }}>{t('drawer.questions')}</div>
               <ul className="mate-items">{analysis.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
             </div>
-          </section>
-        ) : null}
+          ) : null}
 
-        <section className="mate-section">
-          <h3>{t('drawer.discussion')}</h3>
+          <div className="mate-subhead">{t('drawer.discussionSection')}</div>
           <div className="mate-thread">
             {requirement.discussion.length === 0
               ? <div className="mate-empty">{t('drawer.noDiscussion')}</div>
@@ -280,12 +317,10 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
               {t('action.answer')}
             </Button>
           </div>
-        </section>
 
-        {canConfirm ? (
-          <section className="mate-section">
-            <h3>{t('drawer.plan')}</h3>
+          {canConfirm ? (
             <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="mate-kv">{t('drawer.plan')}</div>
               <Field label={t('drawer.targetProject')}>
                 <select className="mate-select" value={target} onChange={(event) => setTarget(event.target.value)}>
                   {snapshot.projects.map((project) => (
@@ -329,40 +364,49 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
                 </Button>
               </div>
             </div>
-          </section>
-        ) : null}
-
-        {requirement.dispatch !== null ? (
-          <section className="mate-section">
-            <h3>{t('drawer.execution')}</h3>
-            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div className="mate-kv">
-                <span>{t('drawer.session')}:</span>
-                <span className="mate-mono">{requirement.dispatch.sessionId}</span>
-                <span>·</span>
-                <span>{requirement.dispatch.reused ? t('drawer.dispatchReuse') : t('drawer.dispatchNew')}</span>
-              </div>
-              <div className="mate-kv">
-                <span>{formatRelative(requirement.dispatch.requestedAt, lang)}</span>
-                {requirement.dispatch.pendingInput.length > 0 ? (
-                  <Badge tone="warn">{t('badge.needsInput')}: {requirement.dispatch.pendingInput.join(', ')}</Badge>
-                ) : null}
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Button onClick={() => openSession(requirement.dispatch?.sessionId ?? '')}>{t('action.openSession')}</Button>
-                <Button onClick={() => { void navigator.clipboard.writeText(requirement.dispatch?.sessionId ?? '') }}>{t('action.copy')}</Button>
-                {requirement.status === 'running' ? (
-                  <Button variant="danger" busy={busy('requirement.cancel')} onClick={() => run('requirement.cancel', COMMANDS.requirementCancel, {})}>
-                    {t('action.cancel')}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </section>
-        ) : null}
+          ) : null}
+        </section>
 
         <section className="mate-section">
-          <h3>{t('drawer.result')}</h3>
+          <StepHeading step={3} label={t('drawer.sessionsSection')} />
+
+          {dispatched.length === 0 ? (
+            <div className="mate-empty">{t('drawer.noSessions')}</div>
+          ) : (
+            <div className="mate-cycles">
+              {dispatched.map((entry) => {
+                const child = entry.requirement
+                const sessionId = child.dispatch?.sessionId ?? ''
+                const review = child.id === requirement.id ? null : acceptanceLine(child)
+                return (
+                  <div key={entry.key} className="mate-cycle">
+                    <button
+                      type="button"
+                      className="mate-cycle-main"
+                      onClick={() => openSession(sessionId)}
+                      title={t('action.openSession')}
+                    >
+                      <span className="mate-cycle-title">{entry.label}</span>
+                      <span className="mate-cycle-meta">
+                        <span className="mate-mono">{sessionId.slice(0, 18)}…</span>
+                        {review !== null ? <span>· ✓ {review}</span> : null}
+                        <span>· {formatRelative(child.dispatch?.requestedAt ?? child.updatedAt, lang)}</span>
+                      </span>
+                    </button>
+                    <Badge tone={child.status === 'failed' ? 'error' : child.status === 'awaiting_review' ? 'warn' : ''}>
+                      {t(`status.${child.status}`)}
+                    </Badge>
+                    {child.dispatch?.reused === true ? <Badge tone="confirm">{t('badge.reuse')}</Badge> : null}
+                    {child.id !== requirement.id ? (
+                      <Button variant="ghost" onClick={() => onOpenRequirement(child.id)}>{t('action.details')}</Button>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="mate-subhead">{t('drawer.result')}</div>
           {result === null ? (
             <div className="mate-empty">{t('drawer.resultEmpty')}</div>
           ) : (
@@ -404,50 +448,61 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
           )}
         </section>
 
-        {children.length > 0 || requirement.kind === 'goal' ? (
-          <section className="mate-section">
-            <h3>{t('drawer.children')}</h3>
-            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {children.map((child) => (
-                <button
-                  key={child.id}
-                  type="button"
-                  className="mate-row"
-                  onClick={() => onOpenRequirement(child.id)}
-                  title={child.brief}
-                >
-                  <span className="mate-row-main">
-                    <span className="mate-row-title">#{child.number} {child.title}</span>
-                    <span className="mate-row-meta">{child.mateName} · {formatRelative(child.updatedAt, lang)}</span>
-                  </span>
-                  <Badge tone={child.status === 'failed' ? 'error' : child.status === 'awaiting_review' ? 'warn' : ''}>
-                    {t(`status.${child.status}`)}
-                  </Badge>
-                </button>
-              ))}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  className="mate-input"
-                  value={childTitle}
-                  placeholder={t('action.addChild')}
-                  onChange={(event) => setChildTitle(event.target.value)}
-                />
-                <Button
-                  busy={busy('requirement.addChild')}
-                  disabled={childTitle.trim().length === 0}
-                  onClick={() => {
-                    const title = childTitle.trim()
-                    if (title.length === 0) return
-                    setChildTitle('')
-                    run('requirement.addChild', COMMANDS.requirementAddChild, { title })
-                  }}
-                >
-                  {t('action.addChild')}
-                </Button>
-              </div>
+        <section className="mate-section">
+          <StepHeading step={4} label={t('drawer.supplementSection')} />
+          <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="mate-hint">{t('drawer.supplementHint')}</div>
+            <textarea
+              className="mate-textarea"
+              value={supplement}
+              placeholder={t('drawer.supplementPlaceholder')}
+              onChange={(event) => setSupplement(event.target.value)}
+            />
+            <div>
+              <Button
+                variant="primary"
+                busy={busy('requirement.supplement')}
+                disabled={supplement.trim().length === 0}
+                onClick={() => {
+                  const brief = supplement.trim()
+                  if (brief.length === 0) return
+                  setSupplement('')
+                  run('requirement.supplement', COMMANDS.requirementSupplement, { brief })
+                }}
+              >
+                {t('action.supplement')}
+              </Button>
             </div>
-          </section>
-        ) : null}
+            {children.length === 0 ? (
+              <div className="mate-empty">{t('drawer.noChildren')}</div>
+            ) : (
+              <div className="mate-cycles">
+                {children.map((child) => (
+                  <div key={child.id} className="mate-cycle">
+                    <button
+                      type="button"
+                      className="mate-cycle-main"
+                      onClick={() => onOpenRequirement(child.id)}
+                      title={child.brief}
+                    >
+                      <span className="mate-cycle-title">#{child.number} {child.title}</span>
+                      <span className="mate-cycle-meta">
+                        {acceptanceLine(child) !== null ? <span>✓ {acceptanceLine(child)} · </span> : null}
+                        {formatRelative(child.updatedAt, lang)}
+                      </span>
+                    </button>
+                    <Badge tone={child.status === 'failed' ? 'error' : child.status === 'awaiting_review' ? 'warn' : ''}>
+                      {t(`status.${child.status}`)}
+                    </Badge>
+                    {child.dispatch !== null ? (
+                      <Button variant="ghost" onClick={() => openSession(child.dispatch?.sessionId ?? '')}>{t('action.openSession')}</Button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
 
         {requirement.errors.length > 0 ? (
           <section className="mate-section">
@@ -465,6 +520,3 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
     </div>
   )
 }
-
-
-

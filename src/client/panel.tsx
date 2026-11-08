@@ -2,6 +2,7 @@ import React from 'react'
 import { COMMANDS, type LiveSessionView, type MateDistillView, type MateView, type ModelEffortsView, type RequirementStatus, type RequirementView, type Snapshot } from '../shared.js'
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
+import { catalogAvailability, formatZonedDateTime } from './scheduleDraft.js'
 import { SessionDrawer } from './sessionDrawer.js'
 import { formatRelative, projectLabel, projectSourceLabelKey, queueDetail, queueHint, userAttention, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
@@ -64,6 +65,23 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   const mates = snapshot?.mates.filter((mate) => !mate.archived) ?? []
   const requirements = snapshot?.requirements.filter((item) => item.parentId === null) ?? []
   const projects = snapshot?.projects ?? []
+
+  // Judge every catalog route in the effective scheduling zone at the Host's
+  // snapshot clock, so the banner agrees with the Host's queue gate instead of
+  // the browser clock. `null` when the catalog is empty or the judge is
+  // unavailable; the banner then stays silent.
+  const availability = React.useMemo(() => {
+    if (snapshot === null) return null
+    return catalogAvailability({
+      nowMs: snapshot.serverTime,
+      schedule: snapshot.settings.schedule,
+      catalog: snapshot.settings.modelCatalog,
+      timezone: snapshot.settings.timezone.id,
+    })
+  }, [snapshot])
+  const hasQueuedRequirements = (snapshot?.requirements ?? []).some(
+    (requirement) => requirement.status === 'queued',
+  )
 
   const filtered = React.useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -167,6 +185,21 @@ export function MatePanel(context: PanelContext): React.ReactElement {
       {state.error !== null ? (
         <div className="mate-panel mate-error-line">
           {t('error.loadFailed', { message: state.error })}
+        </div>
+      ) : null}
+
+      {availability !== null && availability.available === 0 && snapshot !== null ? (
+        <div className="mate-attention-banner" role="status">
+          <strong>
+            {t(hasQueuedRequirements ? 'panel.noModel.queued' : 'panel.noModel.queueing')}
+          </strong>
+          {availability.earliestStart !== null ? (
+            <span>
+              {t('queue.startsAt', {
+                clock: formatZonedDateTime(availability.earliestStart, snapshot.settings.timezone.id, lang),
+              })}
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -285,7 +318,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           {[...filtered].sort((a, b) => b.updatedAt - a.updatedAt).map((requirement) => {
             const attention = userAttention(requirement)
             const queue = requirement.queue ?? null
-            const queueLabel = queueHint(requirement, t, lang)
+            const queueLabel = queueHint(requirement, t, lang, snapshot.settings.timezone.id)
             return (
             <button
               key={requirement.id}
@@ -313,6 +346,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                 </span>
               ) : null}
               {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
+              {requirement.parentId !== null ? <Badge tone="confirm">{t('badge.supplement')}</Badge> : null}
               {requirement.dispatch?.reused === true || (requirement.dispatch === null && (requirement.analysis?.reuseSessionId ?? null) !== null) ? (
                 <Badge tone="confirm">{t('badge.reuse')}</Badge>
               ) : null}
@@ -355,6 +389,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                     requirement={card.requirement}
                     t={t}
                     lang={lang}
+                    timezone={snapshot.settings.timezone.id}
                     childrenCount={snapshot.requirements.filter((item) => item.parentId === card.requirement.id).length}
                     onOpen={() => setDrawerId(card.requirement.id)}
                     onOpenSession={() => setSessionDrawerId(card.requirement.dispatch?.sessionId ?? '')}
@@ -487,10 +522,12 @@ export function MatePanel(context: PanelContext): React.ReactElement {
   )
 }
 
-function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSession }: {
+function RequirementCard({ requirement, t, lang, timezone, childrenCount, onOpen, onOpenSession }: {
   requirement: RequirementView
   t: PanelContext['t']
   lang: 'zh' | 'en'
+  /** Effective scheduling zone for the queue start clock. */
+  timezone: string
   childrenCount: number
   onOpen: () => void
   onOpenSession?: () => void
@@ -498,7 +535,7 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
   const status = requirement.status
   const attention = userAttention(requirement)
   const queue = requirement.queue ?? null
-  const queueLabel = queueHint(requirement, t, lang)
+  const queueLabel = queueHint(requirement, t, lang, timezone)
   return (
     <div className={`mate-card${attention === null ? '' : ' attention'}`}>
       <button type="button" className="mate-card-open" onClick={onOpen}>
@@ -521,6 +558,7 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
           ) : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
           {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
+          {requirement.parentId !== null ? <Badge tone="confirm">{t('badge.supplement')}</Badge> : null}
           {requirement.dispatch?.reused === true || (requirement.dispatch === null && (requirement.analysis?.reuseSessionId ?? null) !== null) ? (
             <Badge tone="confirm">{t('badge.reuse')}</Badge>
           ) : null}

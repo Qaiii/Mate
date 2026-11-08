@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DisabledWindow, ModelSchedule, ScheduleConfig } from './shared.js'
 import type { ValidationIssue } from './schedule.js'
+import { resolveHolidayCalendar } from './holidays.js'
 import {
   WEEKDAYS,
+  availableModelRoutes,
   describeWindow,
   emptySchedule,
   evaluateModelRoute,
@@ -12,8 +14,10 @@ import {
   isModelAvailable,
   isValidTimeZone,
   localParts,
+  modelAvailabilityAt,
   resolveEffectiveTimeZone,
   validateScheduleConfig,
+  workdaySetOf,
 } from './schedule.js'
 
 const MINUTE = 60_000
@@ -600,10 +604,36 @@ describe('isModelAvailable: nextAvailableAt', () => {
     expect(result.nextAvailableAt).toBe(utc(`${SATURDAY}T00:00:00Z`))
   })
 
-  it('returns null when the next available minute is past the 8-day scan', () => {
-    const schedule = scheduleOf(fullDayWindows(), { holidays: ['2026-11-18'] })
+  it('returns null when the next available minute is past the 12-day scan', () => {
+    const schedule = scheduleOf(fullDayWindows(), { holidays: ['2026-12-01'] })
     const result = isModelAvailable(monday('10:00'), schedule.models[0], 'UTC', schedule.holidays)
     expect(result.nextAvailableAt).toBeNull()
+  })
+
+  it('computes an ETA across the nine-day 2026 Spring Festival holiday', () => {
+    // 2026 春节 is 2/15-2/23 (nine days), longer than the old 8-day horizon.
+    const config: ScheduleConfig = {
+      models: [],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: null,
+    }
+    const calendar = resolveHolidayCalendar(config, { year: 2026 })
+    const entry = entryOf([
+      windowOf('holiday', '00:00', '12:00'),
+      windowOf('holiday', '12:00', '00:00'),
+    ])
+    const result = isModelAvailable(
+      utc('2026-02-15T02:00:00Z'), // 10:00 Asia/Shanghai on the first holiday day
+      entry,
+      'Asia/Shanghai',
+      calendar.holidays,
+      calendar.workdays,
+    )
+    expect(result.available).toBe(false)
+    // The first ordinary working minute after 2/23 is 2/24 00:00 local.
+    expect(result.nextAvailableAt).toBe(utc('2026-02-23T16:00:00Z'))
   })
 })
 
@@ -697,5 +727,174 @@ describe('describeWindow', () => {
     expect(describeWindow(windowOf('weekend', '09:00', '18:00'))).toBe('weekend 09:00-18:00')
     expect(describeWindow(windowOf('holiday', '00:00', '23:59'))).toBe('holiday 00:00-23:59')
     expect(describeWindow(windowOf(['mon', 'fri'], '10:00', '12:00'))).toBe('mon,fri 10:00-12:00')
+  })
+})
+
+describe('acceptance: disabled 09:00-00:30 window', () => {
+  const entry = entryOf([windowOf('weekday', '09:00', '00:30')])
+
+  it('blocks 09:00 and reports 00:30 of the following local day as the next available instant', () => {
+    const result = isModelAvailable(monday('09:00'), entry, 'UTC', [])
+    expect(result).toMatchObject({ available: false, reason: 'inside-window' })
+    expect(result.nextAvailableAt).toBe(utc('2026-11-10T00:30:00Z'))
+  })
+
+  it('judges 01:00 on the same day as available', () => {
+    expect(isModelAvailable(monday('01:00'), entry, 'UTC', [])).toMatchObject({
+      available: true,
+      reason: 'outside-window',
+      nextAvailableAt: null,
+    })
+  })
+
+  it('round-trips the cross-midnight window through validation', () => {
+    const value = okValue(scheduleOf([windowOf('weekday', '09:00', '00:30')]))
+    expect(value.models[0].disabledWindows).toEqual([{ kind: 'weekday', start: '09:00', end: '00:30' }])
+  })
+})
+
+describe('workday (调休上班日) branch', () => {
+  const entry = entryOf([
+    windowOf('weekday', '09:00', '12:00'),
+    windowOf('weekend', '00:00', '23:59'),
+  ])
+  const MAKEUP_SATURDAY = '2025-10-11'
+  const saturdayAt = (date: string): number => utc(`${date}T02:00:00Z`) // 10:00 Asia/Shanghai
+
+  it('judges a makeup Saturday as a working day (weekday window applies)', () => {
+    const result = isModelAvailable(
+      saturdayAt(MAKEUP_SATURDAY),
+      entry,
+      'Asia/Shanghai',
+      [],
+      [MAKEUP_SATURDAY],
+    )
+    expect(result).toMatchObject({
+      available: false,
+      branch: 'weekday',
+      window: windowOf('weekday', '09:00', '12:00'),
+    })
+  })
+
+  it('keeps an ordinary Saturday on the weekend branch', () => {
+    const result = isModelAvailable(
+      saturdayAt('2025-10-18'),
+      entry,
+      'Asia/Shanghai',
+      [],
+      [MAKEUP_SATURDAY],
+    )
+    expect(result).toMatchObject({
+      available: false,
+      branch: 'weekend',
+      window: windowOf('weekend', '00:00', '23:59'),
+    })
+  })
+
+  it('normalizes the manual workday list', () => {
+    expect(workdaySetOf(scheduleOf([], { workdays: [' 2025-10-11 ', ''] }))).toEqual(new Set(['2025-10-11']))
+    expect(workdaySetOf(null).size).toBe(0)
+  })
+})
+
+describe('built-in China holiday calendar integration', () => {
+  const config: ScheduleConfig = {
+    models: [],
+    holidays: [],
+    workdays: [],
+    useBuiltinHolidays: true,
+    timezone: null,
+  }
+
+  it('judges 2025 National Day as a holiday branch', () => {
+    const calendar = resolveHolidayCalendar(config, { year: 2025 })
+    const entry = entryOf([windowOf('holiday', '00:00', '23:59')])
+    const result = isModelAvailable(
+      utc('2025-10-01T02:00:00Z'),
+      entry,
+      'Asia/Shanghai',
+      calendar.holidays,
+      calendar.workdays,
+    )
+    expect(result).toMatchObject({ available: false, branch: 'holiday', reason: 'inside-window' })
+  })
+
+  it('judges the 2025-10-11 makeup Saturday as a working day', () => {
+    const calendar = resolveHolidayCalendar(config, { year: 2025 })
+    const entry = entryOf([windowOf('weekday', '09:00', '12:00'), windowOf('weekend', '00:00', '23:59')])
+    const result = isModelAvailable(
+      utc('2025-10-11T02:00:00Z'),
+      entry,
+      'Asia/Shanghai',
+      calendar.holidays,
+      calendar.workdays,
+    )
+    expect(result).toMatchObject({ available: false, branch: 'weekday' })
+  })
+})
+
+describe('modelAvailabilityAt / availableModelRoutes', () => {
+  const schedule: ScheduleConfig = {
+    models: [
+      entryOf([windowOf('weekday', '09:00', '12:00')], 'openai', 'gpt'),
+      { provider: 'anthropic', model: 'claude', disabledWindows: [] },
+    ],
+    holidays: [],
+    workdays: [],
+    useBuiltinHolidays: true,
+    timezone: null,
+  }
+  const routes = [
+    { provider: 'openai', model: 'gpt' },
+    { provider: 'anthropic', model: 'claude' },
+  ]
+
+  it('returns only the routes available at the instant', () => {
+    expect(availableModelRoutes({ nowMs: monday('10:00'), schedule, routes, timezone: 'UTC' }))
+      .toEqual([{ provider: 'anthropic', model: 'claude' }])
+  })
+
+  it('reports the next availability for a blocked route', () => {
+    const judgements = modelAvailabilityAt({ nowMs: monday('10:00'), schedule, routes, timezone: 'UTC' })
+    expect(judgements).toHaveLength(2)
+    expect(judgements[0]).toMatchObject({
+      provider: 'openai',
+      model: 'gpt',
+      available: false,
+      nextAvailableAt: monday('12:00'),
+    })
+    expect(judgements[1]).toMatchObject({ available: true, nextAvailableAt: null })
+  })
+
+  it('is available for every route when none is configured', () => {
+    expect(availableModelRoutes({
+      nowMs: monday('10:00'),
+      schedule: emptySchedule(),
+      routes,
+      timezone: 'UTC',
+    })).toEqual(routes)
+  })
+})
+
+describe('validateScheduleConfig: holiday data fields', () => {
+  it('defaults the built-in toggle on and both manual lists empty', () => {
+    const value = okValue({})
+    expect(value.workdays).toEqual([])
+    expect(value.useBuiltinHolidays).toBe(true)
+  })
+
+  it('normalizes and de-duplicates makeup workdays', () => {
+    const value = okValue({ workdays: ['2025-10-11', '2025-09-28', '2025-10-11'] })
+    expect(value.workdays).toEqual(['2025-09-28', '2025-10-11'])
+  })
+
+  it('rejects impossible workday dates', () => {
+    expect(hasIssue(errorsOf({ workdays: ['2025-02-30'] }), 'workday-format', 'workdays[0]')).toBe(true)
+    expect(hasIssue(errorsOf({ workdays: '2025-10-11' }), 'shape', 'workdays')).toBe(true)
+  })
+
+  it('rejects a non-boolean built-in toggle', () => {
+    expect(hasIssue(errorsOf({ useBuiltinHolidays: 'yes' }), 'holiday-toggle', 'useBuiltinHolidays')).toBe(true)
+    expect(okValue({ useBuiltinHolidays: false }).useBuiltinHolidays).toBe(false)
   })
 })

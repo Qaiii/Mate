@@ -42,6 +42,7 @@ import {
   removeHolidayYear,
   toggleWeekday,
   tryModelAvailability,
+  tryResolveHolidayCalendar,
   validateScheduleDraft,
   windowKindChoice,
   windowSummary,
@@ -930,6 +931,8 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
   const [pollMs, setPollMs] = React.useState(String(snapshot.settings.pollMs))
   const [models, setModels] = React.useState<ModelSchedule[]>(initial.models)
   const [holidays, setHolidays] = React.useState<string[]>(initial.holidays)
+  const [workdays, setWorkdays] = React.useState<string[]>(initial.workdays)
+  const [useBuiltinHolidays, setUseBuiltinHolidays] = React.useState(initial.useBuiltinHolidays)
   const [timezoneOverride, setTimezoneOverride] = React.useState(initial.timezone ?? '')
   // Runtime-tolerant read: an older Host may not send the compression block yet.
   const [initialCompression] = React.useState<ContextCompressionConfig>(
@@ -945,6 +948,10 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
   const [bulkYear, setBulkYear] = React.useState(String(new Date().getFullYear()))
   const [bulkDates, setBulkDates] = React.useState('')
   const [holidayNote, setHolidayNote] = React.useState<string | null>(null)
+  const [workdayDate, setWorkdayDate] = React.useState('')
+  const [workdayBulkYear, setWorkdayBulkYear] = React.useState(String(new Date().getFullYear()))
+  const [workdayBulkDates, setWorkdayBulkDates] = React.useState('')
+  const [workdayNote, setWorkdayNote] = React.useState<string | null>(null)
   const started = snapshot.settings.lastStartedAt
 
   // Runtime-tolerant read: an older Host may not send the schedule block yet.
@@ -952,6 +959,7 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     (snapshot.settings as { timezone?: TimeZoneView }).timezone ?? { id: 'UTC', source: 'host' }
   const catalog = snapshot.settings.modelCatalog
   const holidayGroups = React.useMemo(() => groupHolidays(holidays), [holidays])
+  const workdayGroups = React.useMemo(() => groupHolidays(workdays), [workdays])
 
   /** A model route's catalog display name; empty when the catalog does not know it. */
   const routeLabel = (provider: string, model: string): string => {
@@ -976,8 +984,13 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
   const draft = React.useMemo<ScheduleConfig>(() => ({
     models,
     holidays,
+    workdays,
+    useBuiltinHolidays,
     timezone: timezoneOverride.trim().length === 0 ? null : timezoneOverride.trim(),
-  }), [models, holidays, timezoneOverride])
+  }), [models, holidays, workdays, useBuiltinHolidays, timezoneOverride])
+  // The live preview judges with the same effective calendar the Host applies
+  // when it schedules: built-in statutory holidays + 调休 plus manual overrides.
+  const previewCalendar = React.useMemo(() => tryResolveHolidayCalendar(draft), [draft])
   const validation = React.useMemo(() => validateScheduleDraft(draft), [draft])
   const errors = validation.ok ? [] : validation.errors
   // The compression section is validated separately: its threshold is raw
@@ -1006,12 +1019,20 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     if (issue.path === '' || issue.path === 'models') return true
     if (/^models\[\d+\]/.test(issue.path)) return false
     if (issue.path === 'holidays' || issue.path.startsWith('holidays[')) return false
+    if (issue.path === 'workdays' || issue.path.startsWith('workdays[')) return false
+    if (issue.path === 'useBuiltinHolidays') return false
     if (issue.path === 'timezone') return false
     return true
   })
   const timezoneIssues = issuesFor(errors, 'timezone').map((issue) => issueMessage(t, issue))
+  const holidayToggleIssues = errors
+    .filter((issue) => issue.path === 'useBuiltinHolidays' || issue.code === 'holiday-toggle')
+    .map((issue) => issueMessage(t, issue))
   const holidayIssues = errors
     .filter((issue) => issue.path === 'holidays' || issue.path.startsWith('holidays['))
+    .map((issue) => issueMessage(t, issue))
+  const workdayIssues = errors
+    .filter((issue) => issue.path === 'workdays' || issue.path.startsWith('workdays['))
     .map((issue) => issueMessage(t, issue))
 
   const modelIssues = (modelIndex: number): string[] => issuesFor(errors, `models[${modelIndex}]`)
@@ -1102,6 +1123,40 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
     setHolidays((current) => removeHolidayYear(current, year))
   }
 
+  const addSingleWorkday = (): void => {
+    if (!isRealDateKey(workdayDate)) {
+      setWorkdayNote(t('settings.workdays.invalidDate'))
+      return
+    }
+    setWorkdays((current) => mergeHolidays(current, [workdayDate]))
+    setWorkdayDate('')
+    setWorkdayNote(null)
+  }
+  const addBulkWorkdays = (): void => {
+    if (parseHolidayYear(workdayBulkYear) === null) {
+      setWorkdayNote(t('settings.workdays.yearInvalid'))
+      return
+    }
+    const result = expandYearHolidays(workdayBulkYear, workdayBulkDates)
+    if (result.dates.length === 0) {
+      setWorkdayNote(result.invalid.length > 0
+        ? t('settings.workdays.bulkInvalid', { items: result.invalid.join(', ') })
+        : t('settings.workdays.bulkEmpty'))
+      return
+    }
+    setWorkdays((current) => mergeHolidays(current, result.dates))
+    setWorkdayBulkDates('')
+    setWorkdayNote(result.invalid.length > 0
+      ? t('settings.workdays.bulkInvalid', { items: result.invalid.join(', ') })
+      : null)
+  }
+  const deleteWorkday = (date: string): void => {
+    setWorkdays((current) => removeHolidayDates(current, [date]))
+  }
+  const deleteWorkdayYear = (year: string): void => {
+    setWorkdays((current) => removeHolidayYear(current, year))
+  }
+
   const submit = (): void => {
     if (!validation.ok || !compressionValidation.ok) return
     void onSubmit({
@@ -1165,7 +1220,12 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
             </div>
           ) : null}
           {models.map((entry, modelIndex) => {
-            const availability = tryModelAvailability(entry, previewZone, holidays)
+            const availability = tryModelAvailability(
+              entry,
+              previewZone,
+              previewCalendar?.holidays ?? holidays,
+              previewCalendar?.workdays,
+            )
             return (
               <div
                 key={`${entry.provider}|${entry.model}`}
@@ -1307,6 +1367,17 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
 
         <section className="mate-profile-section">
           <h3>{t('settings.holidays.title')}</h3>
+          <label className="mate-check">
+            <input
+              type="checkbox"
+              checked={useBuiltinHolidays}
+              aria-label={t('settings.holidays.builtin')}
+              onChange={(event) => setUseBuiltinHolidays(event.target.checked)}
+            />
+            {t('settings.holidays.builtin')}
+          </label>
+          <span className="mate-sub">{t('settings.holidays.builtinHint')}</span>
+          <ErrorLines messages={holidayToggleIssues} />
           <span className="mate-sub">{t('settings.holidays.hint')}</span>
           <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -1422,12 +1493,101 @@ export function SettingsDialog({ snapshot, t, busy, onClose, onSubmit, onTest, o
         </section>
 
         <section className="mate-profile-section">
+          <h3>{t('settings.workdays.title')}</h3>
+          <span className="mate-sub">{t('settings.workdays.hint')}</span>
+          <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ width: 170 }}>
+                <Field label={t('settings.workdays.date')}>
+                  <input
+                    className="mate-input"
+                    type="date"
+                    value={workdayDate}
+                    onChange={(event) => setWorkdayDate(event.target.value)}
+                  />
+                </Field>
+              </div>
+              <Button disabled={workdayDate === ''} onClick={addSingleWorkday}>
+                {t('settings.workdays.addDate')}
+              </Button>
+            </div>
+            <div className="mate-kv">
+              <span>{t('settings.workdays.bulk')}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ width: 110 }}>
+                <Field label={t('settings.workdays.year')}>
+                  <input
+                    className="mate-input"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={workdayBulkYear}
+                    onChange={(event) => setWorkdayBulkYear(event.target.value)}
+                  />
+                </Field>
+              </div>
+              <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+                <Field label={t('settings.workdays.mmdd')} hint={t('settings.workdays.mmddHint')}>
+                  <input
+                    className="mate-input"
+                    value={workdayBulkDates}
+                    placeholder="01-04, 02-14"
+                    onChange={(event) => setWorkdayBulkDates(event.target.value)}
+                  />
+                </Field>
+              </div>
+              <Button disabled={workdayBulkDates.trim().length === 0} onClick={addBulkWorkdays}>
+                {t('settings.workdays.bulkAdd')}
+              </Button>
+            </div>
+            {workdayNote !== null ? (
+              <span className="mate-error-line">{workdayNote}</span>
+            ) : null}
+            <ErrorLines messages={workdayIssues} />
+          </div>
+          {workdays.length === 0 ? (
+            <div className="mate-sub">{t('settings.workdays.none')}</div>
+          ) : (
+            <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {workdayGroups.map((group) => (
+                <div key={group.year} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="mate-row-title">{group.year}</span>
+                    <span className="mate-sub">{t('settings.workdays.count', { n: group.dates.length })}</span>
+                    <Button variant="ghost" onClick={() => deleteWorkdayYear(group.year)}>
+                      {t('settings.workdays.deleteYear', { year: group.year })}
+                    </Button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {group.dates.map((date) => (
+                      <span key={date} className="mate-chipwrap">
+                        <span className="mate-chip" style={{ cursor: 'default' }}>{date}</span>
+                        <button
+                          type="button"
+                          className="mate-chip-edit"
+                          aria-label={t('settings.workdays.deleteDate', { date })}
+                          title={t('settings.workdays.deleteDate', { date })}
+                          onClick={() => deleteWorkday(date)}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mate-profile-section">
           <h3>{t('settings.contextCompression.title')}</h3>
           <div className="mate-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label className="mate-check">
               <input
                 type="checkbox"
                 checked={compressionEnabled}
+                aria-label={t('settings.contextCompression.enable')}
                 onChange={(event) => setCompressionEnabled(event.target.checked)}
               />
               {t('settings.contextCompression.enable')}

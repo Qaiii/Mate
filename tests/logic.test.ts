@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractJsonObject, normalizeAnalysis, normalizeMemory, normalizeResult } from '../src/analyzer.js'
+import { extractJsonObject, followUpBlock, normalizeAnalysis, normalizeMemory, normalizeResult } from '../src/analyzer.js'
 import { mergeMemory, parseDispatchModels, resolveDispatchModel, validateReuseSession } from '../src/app.js'
 import { buildBrief } from '../src/dispatch.js'
 import { isTerminal, statusLabel } from '../src/shared.js'
@@ -234,6 +234,38 @@ describe('dispatch model restrictions', () => {
   })
 })
 
+describe('followUpBlock', () => {
+  it('returns nothing for a top-level requirement', () => {
+    expect(followUpBlock(undefined)).toEqual([])
+  })
+
+  it('describes the parent, its session and its review', () => {
+    const text = followUpBlock({
+      number: 16,
+      title: 'Scheduling',
+      brief: 'add windows',
+      sessionId: 'session-1',
+      resultSummary: 'windows implemented',
+    }).join('\n')
+    expect(text).toContain('# Follow-up context')
+    expect(text).toContain('#16')
+    expect(text).toContain('session-1')
+    expect(text).toContain('windows implemented')
+  })
+
+  it('omits a missing session and review', () => {
+    const text = followUpBlock({
+      number: 1,
+      title: 'Plain',
+      brief: 'do it',
+      sessionId: null,
+      resultSummary: null,
+    }).join('\n')
+    expect(text).not.toContain('Parent session')
+    expect(text).not.toContain('Parent review')
+  })
+})
+
 describe('reuse session validation', () => {
   const candidates = [
     { sessionId: 's1', title: 'Mate · A', updatedAt: 1 },
@@ -267,4 +299,5 @@ describe('status helpers', () => {
     expect(statusLabel('awaiting_review')).toBe('待验收')
   })
 })
+
 
