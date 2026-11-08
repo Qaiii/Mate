@@ -1,6 +1,15 @@
 import type { MateState, MateController } from './controller.js'
 import type { Translator } from './locales.js'
-import type { ProjectSource } from '../shared.js'
+import type { ProjectSource, RequirementView } from '../shared.js'
+
+/** Why a requirement needs the user's attention, if it does. */
+export type UserAttention = 'reply' | 'confirm'
+
+export function userAttention(requirement: RequirementView): UserAttention | null {
+  if (requirement.status === 'clarifying') return 'reply'
+  if (requirement.status === 'proposed') return 'confirm'
+  return null
+}
 
 /** Result of asking the host for one directory path. */
 export interface PickDirectoryResult {
@@ -49,4 +58,5 @@ export function projectSourceLabelKey(source: ProjectSource | undefined): string
   if (source === 'user-new') return 'badge.sourceUserNew'
   return 'badge.sourceAuto'
 }
+
 

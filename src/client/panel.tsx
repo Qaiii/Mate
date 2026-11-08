@@ -3,7 +3,7 @@ import { COMMANDS, type LiveSessionView, type MateDistillView, type MateView, ty
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
 import { SessionDrawer } from './sessionDrawer.js'
-import { formatRelative, projectLabel, projectSourceLabelKey, type PanelContext } from './types.js'
+import { formatRelative, projectLabel, projectSourceLabelKey, userAttention, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
 
 type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed'
@@ -281,20 +281,33 @@ export function MatePanel(context: PanelContext): React.ReactElement {
         />
       ) : view === 'list' ? (
         <div className="mate-list">
-          {[...filtered].sort((a, b) => b.updatedAt - a.updatedAt).map((requirement) => (
-            <button key={requirement.id} type="button" className="mate-row" onClick={() => setDrawerId(requirement.id)}>
+          {[...filtered].sort((a, b) => b.updatedAt - a.updatedAt).map((requirement) => {
+            const attention = userAttention(requirement)
+            return (
+            <button
+              key={requirement.id}
+              type="button"
+              className={`mate-row${attention === null ? '' : ' attention'}`}
+              onClick={() => setDrawerId(requirement.id)}
+            >
               <div className="mate-row-main">
                 <span className="mate-row-title">#{requirement.number} {requirement.title}</span>
                 <span className="mate-row-meta">
                   {requirement.mateName} · {projectLabel(requirement.projectPath)} · {requirement.mateModel} · {formatRelative(requirement.updatedAt, lang)}
                 </span>
               </div>
+              {attention !== null ? (
+                <span className="mate-attention">
+                  {t(attention === 'reply' ? 'attention.reply' : 'attention.confirm')}
+                </span>
+              ) : null}
               <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' ? 'warn' : ''}>
                 {t(`status.${requirement.status}`)}
               </Badge>
               {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
             </button>
-          ))}
+            )
+          })}
           {sessionCards.map((session) => (
             <button
               key={session.sessionId}
@@ -472,11 +485,17 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
   onOpenSession?: () => void
 }): React.ReactElement {
   const status = requirement.status
+  const attention = userAttention(requirement)
   return (
-    <div className="mate-card">
+    <div className={`mate-card${attention === null ? '' : ' attention'}`}>
       <button type="button" className="mate-card-open" onClick={onOpen}>
         <span className="mate-card-title">#{requirement.number} {requirement.title}</span>
         <span className="mate-card-meta">
+          {attention !== null ? (
+            <span className="mate-attention">
+              {t(attention === 'reply' ? 'attention.reply' : 'attention.confirm')}
+            </span>
+          ) : null}
           <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
             {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
           </Badge>

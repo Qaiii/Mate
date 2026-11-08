@@ -421,6 +421,39 @@ export const STYLES = `
 @media (max-width: 780px) {
   .mate-grid3 { grid-template-columns: 1fr; }
 }
+/* Attention states: a requirement that is waiting for the user's reply or
+   confirmation gets a warm accent bar and a solid pill, so it cannot sit
+   unnoticed in a column for hours. */
+.mate-card.attention,
+.mate-row.attention {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 55%, var(--dsw-alias-border-l2, rgba(128,128,128,0.3)));
+  box-shadow: inset 3px 0 0 var(--dsw-alias-state-warn-label, #dd8629);
+}
+.mate-attention {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 1.7; white-space: nowrap;
+  color: color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 72%, var(--dsw-alias-label-primary, #0f1115));
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 55%, transparent);
+}
+.mate-attention::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none;
+}
+.mate-attention-banner {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 12px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 45%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 16%, transparent);
+}
+.mate-attention-banner strong {
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--dsw-alias-state-warn-label, #dd8629) 72%, var(--dsw-alias-label-primary, #0f1115));
+}
+.mate-attention-banner span {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary, #4b5563);
+}
 `
 
 export function Spinner(): React.ReactElement {

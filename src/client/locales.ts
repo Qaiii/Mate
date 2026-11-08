@@ -46,6 +46,10 @@ const ZH: Record<string, string> = {
   'status.done': '已完成',
   'status.failed': '异常',
   'status.cancelled': '已取消',
+  'attention.reply': '等你回复',
+  'attention.confirm': '待你确认',
+  'attention.replyHint': 'Mate 在等你回答下面的问题，回答后它会继续分析或派发。',
+  'attention.confirmHint': '确认之后才会派发到实现会话。',
   'badge.needsInput': '需回答',
   'badge.untracked': '未跟踪会话',
   'badge.idle': '空闲',
@@ -272,6 +276,10 @@ const EN: Record<string, string> = {
   'status.done': 'Done',
   'status.failed': 'Failed',
   'status.cancelled': 'Cancelled',
+  'attention.reply': '等你回复',
+  'attention.confirm': '待你确认',
+  'attention.replyHint': 'Mate 在等你回答下面的问题，回答后它会继续分析或派发。',
+  'attention.confirmHint': '确认之后才会派发到实现会话。',
   'badge.needsInput': 'Needs answer',
   'badge.untracked': 'Untracked session',
   'badge.idle': 'idle',
@@ -467,6 +475,7 @@ export function createTranslator(lang: Lang): Translator {
     return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
   }
 }
+
 
 
 

@@ -2,7 +2,7 @@ import React from 'react'
 import { COMMANDS, type RequirementView, type Snapshot } from '../shared.js'
 import type { MateController } from './controller.js'
 import type { Translator } from './locales.js'
-import { formatRelative, projectLabel, projectSourceLabelKey } from './types.js'
+import { formatRelative, projectLabel, projectSourceLabelKey, userAttention } from './types.js'
 import { Badge, Button, Field } from './ui.js'
 
 export interface DrawerProps {
@@ -51,6 +51,13 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
           <h2>#{requirement.number} {requirement.title}</h2>
           <Button variant="ghost" onClick={onClose} aria-label="close">✕</Button>
         </div>
+
+        {userAttention(requirement) !== null ? (
+          <div className="mate-attention-banner">
+            <strong>{t(userAttention(requirement) === 'reply' ? 'attention.reply' : 'attention.confirm')}</strong>
+            <span>{t(userAttention(requirement) === 'reply' ? 'attention.replyHint' : 'attention.confirmHint')}</span>
+          </div>
+        ) : null}
 
         <div className="mate-kv">
           <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
@@ -439,4 +446,5 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
     </div>
   )
 }
+
 
