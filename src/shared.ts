@@ -16,6 +16,7 @@ export type RequirementStatus =
   | 'clarifying'
   | 'proposed'
   | 'approved'
+  | 'queued'
   | 'conflict'
   | 'running'
   | 'awaiting_review'
@@ -27,6 +28,95 @@ export interface ModelSelection {
   provider: string
   model: string
   reasoningEffort?: string
+}
+
+/** Weekday code used by the availability schedule (ISO order, Monday first). */
+export type WeekdayCode = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+
+/**
+ * Which days a disabled window applies to.
+ * `'weekday'` / `'weekend'` are computed from the local day; `'holiday'` only
+ * matches dates listed as holidays; an explicit weekday array matches exactly
+ * those weekdays on non-holiday days. Holidays take precedence over the
+ * weekday rules (see `isModelAvailable`).
+ */
+export type ScheduleDayKind = 'weekday' | 'weekend' | 'holiday' | WeekdayCode[]
+
+/**
+ * One disabled time window in local wall-clock time. `end < start` crosses
+ * midnight (22:00-06:00 disables 23:30 and 05:30). A window is closed at
+ * `start` and open at `end`.
+ */
+export interface DisabledWindow {
+  kind: ScheduleDayKind
+  /** `HH:mm`, 24h wall clock. */
+  start: string
+  /** `HH:mm`, 24h wall clock; equal to `start` is rejected as a zero-length window. */
+  end: string
+}
+
+/** The disabled windows of one provider/model route. Empty means always available. */
+export interface ModelSchedule {
+  provider: string
+  model: string
+  disabledWindows: DisabledWindow[]
+}
+
+/**
+ * Plugin-wide model availability configuration. Persisted in the Mate storage
+ * domain; an empty `models` array and empty `holidays` mean "always available,
+ * no holidays" and generates no disabled windows.
+ */
+export interface ScheduleConfig {
+  models: ModelSchedule[]
+  /** `YYYY-MM-DD` local dates treated as holidays. */
+  holidays: string[]
+  /** Manual IANA override; `null` follows the DSH client zone, then the host zone. */
+  timezone: string | null
+}
+
+/**
+ * Pre-dispatch context compression policy.
+ *
+ * `threshold` is the context occupancy percentage (1-100): when a dispatch
+ * targets an existing session and the measured occupancy is at or above it,
+ * Mate compacts that session first and falls back to a fresh session when
+ * compaction is unavailable. A missing section means `enabled=false`,
+ * `threshold=80`, so pre-feature configurations keep the old behavior.
+ */
+export interface ContextCompressionConfig {
+  enabled: boolean
+  threshold: number
+}
+
+/** Where the effective scheduling time zone came from (for the settings page). */
+export type TimeZoneSource = 'manual' | 'client' | 'host'
+
+/** The zone availability is computed in, plus the source that supplied it. */
+export interface TimeZoneView {
+  id: string
+  source: TimeZoneSource
+}
+
+/** Which lifecycle action was blocked by a disabled window. */
+export type QueuePhase = 'analyze' | 'dispatch'
+
+/** Why a requirement is waiting for an available model window. */
+export interface QueueEntryView {
+  phase: QueuePhase
+  /** Stable machine code for the block (currently always `'model-window'`). */
+  reason: string
+  /** The exact model route that was blocked. */
+  model: ModelSelection | null
+  /** Human-readable window summary, e.g. `weekday 22:00-06:00`. */
+  window?: string
+  enqueuedAt: number
+  /** Earliest instant (epoch ms) the blocked route becomes available again. */
+  nextWakeAt: number | null
+  /** Zone the decision was made in. */
+  timezone: string
+  /** How many times the wake has retried this requirement. */
+  attempts: number
 }
 
 export interface DispatchModelRule {
@@ -101,6 +191,8 @@ export interface AnalysisView {
   title?: string
   /** Model the Mate picked for the implementing session, or null for default. */
   sessionModel?: ModelSelection | null
+  /** Existing Mate session the Mate chose to continue, or null for a new one. */
+  reuseSessionId?: string | null
   /** Priority the Mate judged from the request itself. */
   priority?: Priority
   summary: string
@@ -114,9 +206,11 @@ export interface AnalysisView {
   at: number
 }
 
+export type DispatchMode = 'auto' | 'new' | 'reuse-idle'
+
 export interface PlanView {
   targetProjectPath: string | null
-  dispatchMode: 'new' | 'reuse-idle'
+  dispatchMode: DispatchMode
   extraInstruction: string
   at: number
 }
@@ -179,6 +273,8 @@ export interface RequirementView {
   dispatch: DispatchView | null
   result: ResultView | null
   errors: RequirementErrorView[]
+  /** Present while the requirement waits for a model availability window. */
+  queue?: QueueEntryView | null
   createdAt: number
   updatedAt: number
   rev: number
@@ -223,6 +319,12 @@ export interface SettingsView {
   /** Last manually selected project path, used to prefill the project-list mode. */
   lastProjectPath: string | null
   modelCatalog: Array<{ provider: string; name: string; models: Array<{ id: string; name: string }> }>
+  /** Model availability windows + holiday dates + optional manual zone override. */
+  schedule: ScheduleConfig
+  /** The zone availability is actually computed in, with its source. */
+  timezone: TimeZoneView
+  /** Pre-dispatch context compression policy (defaults: disabled, 80%). */
+  contextCompression: ContextCompressionConfig
 }
 
 export interface Snapshot {
@@ -237,6 +339,8 @@ export interface Snapshot {
 
 export interface StateRequest {
   rev?: number
+  /** Browser IANA zone the DSH web client reports; used when no manual override is set. */
+  timeZone?: string
 }
 
 /** One readable turn of an existing session, loaded for the preview drawer. */
@@ -327,6 +431,7 @@ export function statusLabel(status: RequirementStatus): string {
     case 'clarifying': return '澄清中'
     case 'proposed': return '待确认'
     case 'approved': return '已确认'
+    case 'queued': return '排队中'
     case 'conflict': return '待确认项目'
     case 'running': return '进行中'
     case 'awaiting_review': return '待验收'
@@ -335,12 +440,3 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
-
-
-
-
-
-
-
-
-

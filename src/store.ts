@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
+import { resolveContextCompressionConfig } from './compression.js'
 import type { MateDomain, MateGlobalRecord, ProjectRecord } from './domain.js'
 import { PLUGIN_VERSION } from './shared.js'
 import type {
+  ContextCompressionConfig,
   MateView,
   ProjectView,
   RequirementView,
+  ScheduleConfig,
   SettingsView,
   Snapshot,
+  TimeZoneView,
 } from './shared.js'
 
 /** One live session row the Host controller reports. */
@@ -28,6 +32,12 @@ export interface LiveSessionInfo {
 export interface SnapshotSource {
   listLive(): Promise<LiveSessionInfo[]>
   modelCatalog(): SettingsView['modelCatalog']
+  timezone(): TimeZoneView
+}
+
+/** The no-config schedule: no disabled windows, no holidays, no zone override. */
+export function emptyScheduleConfig(): ScheduleConfig {
+  return { models: [], holidays: [], timezone: null }
 }
 
 export function newRequirementId(): string {
@@ -65,6 +75,14 @@ export class MateStore {
     return this.domain.global.get()
   }
 
+  /**
+   * The effective context-compression policy. A missing or legacy section
+   * resolves to `{ enabled: false, threshold: 80 }` so old storage keeps working.
+   */
+  contextCompression(): ContextCompressionConfig {
+    return resolveContextCompressionConfig(this.settings().contextCompression)
+  }
+
   async updateSettings(patch: Partial<MateGlobalRecord>): Promise<MateGlobalRecord> {
     const next: MateGlobalRecord = { ...this.settings(), ...patch }
     await this.domain.global.set(next)
@@ -93,6 +111,17 @@ export class MateStore {
 
   listRequirements(): RequirementView[] {
     return [...this.domain.table('requirements').entries()].map(([, value]) => value)
+  }
+
+  /**
+   * Requirements waiting for a model availability window, oldest first. The
+   * FIFO order is the persisted insertion instant, so a Host restart keeps the
+   * same queue order.
+   */
+  queuedRequirements(): RequirementView[] {
+    return this.listRequirements()
+      .filter((requirement) => requirement.status === 'queued' && requirement.queue != null)
+      .sort((a, b) => (a.queue?.enqueuedAt ?? 0) - (b.queue?.enqueuedAt ?? 0) || a.number - b.number)
   }
 
   getRequirement(id: string): RequirementView | undefined {
@@ -257,6 +286,9 @@ export class MateStore {
         lastStartedAt: settings.lastStartedAt ?? null,
         lastProjectPath: settings.lastProjectPath ?? null,
         modelCatalog: source.modelCatalog(),
+        schedule: settings.schedule ?? emptyScheduleConfig(),
+        timezone: source.timezone(),
+        contextCompression: resolveContextCompressionConfig(settings.contextCompression),
       },
       serverTime: Date.now(),
     }
@@ -270,5 +302,3 @@ export class MateStore {
     return segment && segment.length > 0 ? segment : path
   }
 }
-
-

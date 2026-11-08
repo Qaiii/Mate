@@ -1,8 +1,8 @@
 import React from 'react'
-import { COMMANDS, type RequirementView, type Snapshot } from '../shared.js'
+import { COMMANDS, type DispatchMode, type RequirementView, type Snapshot } from '../shared.js'
 import type { MateController } from './controller.js'
 import type { Translator } from './locales.js'
-import { formatRelative, projectLabel, projectSourceLabelKey, userAttention } from './types.js'
+import { formatRelative, projectLabel, projectSourceLabelKey, queueDetail, userAttention } from './types.js'
 import { Badge, Button, Field } from './ui.js'
 
 export interface DrawerProps {
@@ -22,7 +22,7 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
   const [answer, setAnswer] = React.useState('')
   const [extra, setExtra] = React.useState(requirement.plan?.extraInstruction ?? '')
   const [target, setTarget] = React.useState(requirement.plan?.targetProjectPath ?? requirement.projectPath)
-  const [mode, setMode] = React.useState<'new' | 'reuse-idle'>(requirement.plan?.dispatchMode ?? 'new')
+  const [mode, setMode] = React.useState<DispatchMode>(requirement.plan?.dispatchMode ?? 'auto')
   const [childTitle, setChildTitle] = React.useState('')
   const busy = (key: string): boolean => controller.getSnapshot().busy[key] === true
 
@@ -59,6 +59,15 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
           </div>
         ) : null}
 
+        {requirement.status === 'queued' ? (
+          <div className="mate-attention-banner">
+            <strong>{t('queue.banner')}</strong>
+            <span>
+              {requirement.queue == null ? t('queue.badge') : queueDetail(requirement.queue, t, lang)}
+            </span>
+          </div>
+        ) : null}
+
         <div className="mate-kv">
           <Badge tone={requirement.autonomy === 'auto' ? 'auto' : 'confirm'}>
             {requirement.autonomy === 'auto' ? t('badge.auto') : t('badge.confirm')}
@@ -66,7 +75,7 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
           <Badge tone="confirm">{t(projectSourceLabelKey(requirement.projectSource))}</Badge>
           {requirement.status === 'conflict' ? <Badge tone="warn">{t('status.conflict')}</Badge> : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
-          <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' ? 'warn' : ''}>
+          <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' || requirement.status === 'queued' ? 'warn' : ''}>
             {t(`status.${requirement.status}`)}
           </Badge>
           {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
@@ -288,10 +297,20 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
                 </select>
               </Field>
               <Field label={t('drawer.dispatchMode')}>
-                <select className="mate-select" value={mode} onChange={(event) => setMode(event.target.value as 'new' | 'reuse-idle')}>
+                <select className="mate-select" value={mode} onChange={(event) => setMode(event.target.value as DispatchMode)}>
+                  <option value="auto">{t('drawer.dispatchAuto')}</option>
                   <option value="new">{t('drawer.dispatchNew')}</option>
                   <option value="reuse-idle">{t('drawer.dispatchReuse')}</option>
                 </select>
+                <span className="hint">
+                  {mode === 'auto'
+                    ? requirement.analysis?.reuseSessionId
+                      ? t('drawer.reuseHint')
+                      : t('drawer.dispatchAutoHint')
+                    : mode === 'reuse-idle'
+                      ? t('drawer.reuseIdleHint')
+                      : t('drawer.dispatchNewHint')}
+                </span>
               </Field>
               <Field label={t('drawer.extra')}>
                 <textarea className="mate-textarea" value={extra} onChange={(event) => setExtra(event.target.value)} />
@@ -446,5 +465,6 @@ export function RequirementDrawer(props: DrawerProps): React.ReactElement {
     </div>
   )
 }
+
 
 

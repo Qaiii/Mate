@@ -1,4 +1,4 @@
-import { API, type CommandResponse, type StateResponse } from '../shared.js'
+import { API, type CommandResponse, type StateRequest, type StateResponse } from '../shared.js'
 
 /** One error surfaced to the panel, already user-readable. */
 export class MateRequestError extends Error {
@@ -33,8 +33,30 @@ async function postJson<T>(path: string, body: unknown, signal?: AbortSignal): P
   return envelope.value as T
 }
 
+/**
+ * The browser's IANA zone, resolved exactly the way the DSH client does, so the
+ * Host can schedule in the zone the user actually sees. `undefined` when Intl
+ * cannot report one (the Host then keeps its previous value).
+ */
+export function browserTimeZone(): string | undefined {
+  try {
+    const zone = new Intl.DateTimeFormat().resolvedOptions().timeZone
+    return typeof zone === 'string' && zone.length > 0 ? zone : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Poll the snapshot. Every request carries the browser zone: this is the only
+ * channel the Host half has for learning the DSH-client zone, and it is the
+ * fallback used when the user has not set a manual override.
+ */
 export function fetchState(rev: number | undefined, signal?: AbortSignal): Promise<StateResponse> {
-  return postJson<StateResponse>(API.state, rev === undefined ? {} : { rev }, signal)
+  const timeZone = browserTimeZone()
+  const body: StateRequest = rev === undefined ? {} : { rev }
+  if (timeZone !== undefined) body.timeZone = timeZone
+  return postJson<StateResponse>(API.state, body, signal)
 }
 
 export function runCommand(

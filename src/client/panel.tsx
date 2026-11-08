@@ -3,13 +3,13 @@ import { COMMANDS, type LiveSessionView, type MateDistillView, type MateView, ty
 import { ComposeDialog, MateEditorDialog, SettingsDialog } from './dialogs.js'
 import { RequirementDrawer } from './drawer.js'
 import { SessionDrawer } from './sessionDrawer.js'
-import { formatRelative, projectLabel, projectSourceLabelKey, userAttention, type PanelContext } from './types.js'
+import { formatRelative, projectLabel, projectSourceLabelKey, queueDetail, queueHint, userAttention, type PanelContext } from './types.js'
 import { Badge, Button, EmptyState, Spinner } from './ui.js'
 
 type ColumnKey = 'pending' | 'running' | 'review' | 'done' | 'failed'
 
 const COLUMNS: Array<{ key: ColumnKey; statuses: RequirementStatus[] }> = [
-  { key: 'pending', statuses: ['draft', 'analyzing', 'clarifying', 'proposed', 'approved'] },
+  { key: 'pending', statuses: ['draft', 'analyzing', 'clarifying', 'proposed', 'approved', 'queued'] },
   { key: 'running', statuses: ['running'] },
   { key: 'review', statuses: ['awaiting_review'] },
   { key: 'done', statuses: ['done'] },
@@ -22,6 +22,7 @@ const STATUS_COLUMN: Record<RequirementStatus, ColumnKey> = {
   clarifying: 'pending',
   proposed: 'pending',
   approved: 'pending',
+  queued: 'pending',
   conflict: 'pending',
   running: 'running',
   awaiting_review: 'review',
@@ -283,6 +284,8 @@ export function MatePanel(context: PanelContext): React.ReactElement {
         <div className="mate-list">
           {[...filtered].sort((a, b) => b.updatedAt - a.updatedAt).map((requirement) => {
             const attention = userAttention(requirement)
+            const queue = requirement.queue ?? null
+            const queueLabel = queueHint(requirement, t, lang)
             return (
             <button
               key={requirement.id}
@@ -301,9 +304,14 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                   {t(attention === 'reply' ? 'attention.reply' : 'attention.confirm')}
                 </span>
               ) : null}
-              <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' ? 'warn' : ''}>
+              <Badge tone={requirement.status === 'failed' ? 'error' : requirement.status === 'awaiting_review' || requirement.status === 'queued' ? 'warn' : ''}>
                 {t(`status.${requirement.status}`)}
               </Badge>
+              {queueLabel !== null ? (
+                <span title={queue === null ? undefined : queueDetail(queue, t, lang)}>
+                  <Badge tone="warn">{queueLabel}</Badge>
+                </span>
+              ) : null}
               {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
             </button>
             )
@@ -486,6 +494,8 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
 }): React.ReactElement {
   const status = requirement.status
   const attention = userAttention(requirement)
+  const queue = requirement.queue ?? null
+  const queueLabel = queueHint(requirement, t, lang)
   return (
     <div className={`mate-card${attention === null ? '' : ' attention'}`}>
       <button type="button" className="mate-card-open" onClick={onOpen}>
@@ -501,6 +511,11 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
           </Badge>
           <Badge tone="confirm">{t(projectSourceLabelKey(requirement.projectSource))}</Badge>
           {requirement.status === 'conflict' ? <Badge tone="warn">{t('status.conflict')}</Badge> : null}
+          {queueLabel !== null ? (
+            <span title={queue === null ? undefined : queueDetail(queue, t, lang)}>
+              <Badge tone="warn">{queueLabel}</Badge>
+            </span>
+          ) : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
           {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
           <span>{t(`status.${status}`)}</span>

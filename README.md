@@ -19,6 +19,7 @@ DeepSeek Harness 的「项目经理」插件：可增删的 **Mate**（各自绑
 - **派生模型由 Mate 决定**：分析结果里由 Mate 选定实现会话用的模型，用户不再手填；只有需求文本里明确要求时才覆盖。
 - **拆分由 Mate 判断**：Mate 认为一条需求太大时给出拆分建议，父项变「目标」只做进度汇总，不直接派发。
 - **两种执行方式**：`auto`（默认）理解后直接派发、不懂就先讨论；`confirm` 每次派发都要你点确认。
+- **模型可用时段调度**：按 provider/model 配置「禁用时间段」（工作日 / 周末 / 节假日 / 指定星期 + 起止时间，`end < start` 表示跨零点），并维护节假日日期列表（单个日期 / 区间 / 按年批量录入，纯本地）。在禁用时段内**分析需求与派活都不会发起模型调用**：需求进入 FIFO 队列并记录下一次可用时段的开始时间，到点自动唤醒继续处理；不会为了绕开时段而换用别的模型。设置页显示当前生效时区（手动 / DSH 客户端 / Host 本地）及其来源。
 
 ## 安装（桌面版）
 
@@ -54,6 +55,7 @@ dsh dev --no-open --port 3099
 
 - Host 路由（`connection` 的精确 Fetch 路由）：`POST /api/dsh-mate/state`、`POST /api/dsh-mate/command`、`POST /api/dsh-mate/ping`。统一信封 `{ok, value}` / `{ok:false, error:{code,message,detail}}`。
 - 浏览器半 2.5s 轮询 `state`（`rev` 未变只回 `unchanged`），命令后立即刷新。
+- 时段/节假日配置存在 storage domain 的 global（`mate.json`），排队需求连同 `queue` 字段存在 `requirements` 表；`state` 请求携带浏览器 IANA 时区（供 Host 在没有手动覆盖时使用），`settings.update` 接收整份 `schedule` 并做服务端校验（非法返回 `schedule-invalid`）。
 - 不写自定义会话事件、不自建 `ctx.remote` 命名空间：状态全在 storage domain，会话控制全部走 `ctx.sessionController`。
 
 ## 状态机
@@ -62,6 +64,7 @@ dsh dev --no-open --port 3099
 draft → analyzing → proposed ──confirm──→ approved → running → awaiting_review → done
               │  └→ clarifying ──answer─→ analyzing          │        └→ approved(打回)
               │  └→ (auto 且置信足够) → approved
+              │  └→ 模型时段不可用 → queued ──时段开启──→ analyzing / approved
               └→ failed(异常)                                   cancelled(异常)
 ```
 
@@ -75,6 +78,8 @@ draft → analyzing → proposed ──confirm──→ approved → running →
 
 - 派发完成判定基于 `api-session/status` + 15s 对账（`state.pendingInput`），不是精确 turn 边界；刚派发的 20s 内不判定完成。
 - 自动汇总依赖可选的 `sessionQuery` 服务；缺失时摘要只基于需求与方案。
+- 时段闸门只作用于「需求分析」和「派活」两个动作；已派发会话结束后的自动汇总调用不排队（在途会话也绝不受时段结束影响）。
+- 跨零点时段按「瞬时本地日期」判定：工作日的 `22:00-06:00` 覆盖周一~周五的 22:00-24:00 与 00:00-06:00，周五午夜之后按周末规则判定；需要覆盖周末凌晨时给周末单独配一段。
 - 拆分出的子需求各自独立分析/派发；父「目标」的完成需要手动接受。
 - 仅供本机使用；没有多人协作、跨机同步、费用估算。
 

@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import type { MateView, ModelSelection, RequirementView } from './shared.js'
+import {
+  buildHandoffSummary,
+  decideContextAction,
+  formatContextDecisionLog,
+  type CompactionOutcome,
+  type ContextMeasurement,
+} from './compression.js'
+import type { ContextCompressionConfig, MateView, ModelSelection, RequirementView } from './shared.js'
 
 /** Minimal shape of `ctx.sessionController` that dispatch depends on. */
 export interface SessionSummaryLike {
@@ -25,6 +32,16 @@ export interface SessionControllerLike {
   cancel(request: { sessionId: string }, signal?: AbortSignal): Promise<unknown>
   list(request: Record<string, never>, signal?: AbortSignal): Promise<{ items: SessionSummaryLike[] }>
   state(request: { sessionId: string }, signal?: AbortSignal): Promise<{ running: boolean; pendingInput?: string[] }>
+  /**
+   * Optional complete projection face. `values.contextPressure` carries
+   * `{ pressureTokens?, projectedTokens?, contextWindow? }` for live AND cold
+   * sessions (older Hosts may not expose it; callers must feature-detect).
+   */
+  projections?(request: { sessionId: string }, signal?: AbortSignal): Promise<{
+    kind?: string
+    asOfSeq?: number
+    values?: Record<string, unknown>
+  } | null>
 }
 
 /** Minimal shape of the `workspaceController` service that dispatch needs. */
@@ -50,10 +67,24 @@ export interface DispatchOptions {
    * project's Workspace so it appears in the sidebar.
    */
   headless?: boolean
+  /** Exact idle session to continue; the Host re-checked it before dispatch. */
+  reuseSessionId?: string
 }
 
 /** Upper bound on Workspace-attached (interactive) creation before falling back. */
 const WORKSPACE_CREATE_TIMEOUT_MS = 15_000
+
+/**
+ * Pre-dispatch context guard. The Host wires this to the persisted policy, an
+ * occupancy measurement (`ctx.tokenMeter`, or the durable-log heuristic) and the
+ * compaction service (`ctx.compaction`). Kept as an interface so dispatch tests
+ * can drive every branch without model calls.
+ */
+export interface DispatchContextCompression {
+  config: () => ContextCompressionConfig
+  measure: (sessionId: string, model: ModelSelection | null) => Promise<ContextMeasurement | null>
+  compact: (sessionId: string) => Promise<CompactionOutcome>
+}
 
 /** Warnings a dispatch may accumulate without failing the dispatch itself. */
 export type DispatchWarning = { code: string; message: string }
@@ -68,7 +99,7 @@ export interface DispatchOutcome {
  * Build the model-facing briefing for one dispatched session. It is written to
  * be self-contained: a fresh agent receives it with no other context.
  */
-export function buildBrief(requirement: RequirementView, mate: MateView, projectPath: string = requirement.projectPath): string {
+export function buildBrief(requirement: RequirementView, mate: MateView, projectPath: string = requirement.projectPath, followUp = false): string {
   const tasks = (requirement.analysis?.subTasks ?? [])
     .map((task, index) => {
       const lines = [`${index + 1}. ${task.title}`]
@@ -83,6 +114,7 @@ export function buildBrief(requirement: RequirementView, mate: MateView, project
 
   return [
     `You are implementing one requirement on behalf of the project manager "${mate.name}".`,
+    followUp ? 'This requirement continues the work already done in this session (same module or feature); re-read the recent context before changing anything.' : '',
     '',
     `# Requirement`,
     `Title: ${requirement.title}`,
@@ -108,6 +140,7 @@ export class Dispatcher {
     private readonly workspaceController: () => WorkspaceControllerLike | null,
     private readonly log: (message: string) => void,
     private readonly signal: AbortSignal = new AbortController().signal,
+    private readonly compression: DispatchContextCompression | null = null,
   ) {}
 
   /** Find an idle session this plugin created earlier in the same project. */
@@ -131,9 +164,21 @@ export class Dispatcher {
   ): Promise<DispatchOutcome> {
     const warnings: DispatchWarning[] = []
     const overrides: ModelSelection | null = requirement.sessionOverrides ?? model ?? null
-    const mode = requirement.plan?.dispatchMode ?? 'new'
+    const mode = requirement.plan?.dispatchMode ?? 'auto'
+    const requested = options.reuseSessionId ?? null
 
-    let sessionId: string | null = mode === 'reuse-idle' ? await this.findReusable(projectPath) : null
+    let sessionId: string | null = null
+    if (mode !== 'new') {
+      sessionId = requested ?? (mode === 'reuse-idle' ? await this.findReusable(projectPath) : null)
+    }
+    // Pre-dispatch context guard: only a reused session can be over threshold.
+    // A failed/absent compaction falls back to a fresh session carrying a
+    // handoff summary; everything else keeps the original dispatch path.
+    let handoffSummary: string | null = null
+    if (sessionId !== null) {
+      handoffSummary = await this.guardReusedContext(sessionId, requirement, overrides, projectPath, warnings)
+      if (handoffSummary !== null) sessionId = null
+    }
     const reused = sessionId !== null
     if (sessionId === null) {
       sessionId = await this.createSession(projectPath, options, warnings)
@@ -158,14 +203,85 @@ export class Dispatcher {
       warnings.push({ code: 'rename-failed', message: String(error) })
     }
 
+    const brief = buildBrief(requirement, mate ?? placeholderMate(), projectPath, reused)
     await this.controller.prompt({
       requestId: `mate-dispatch-${randomUUID()}`,
       sessionId,
       mode: 'queue',
-      content: [{ type: 'text', text: buildBrief(requirement, mate ?? placeholderMate(), projectPath) }],
+      content: [{ type: 'text', text: handoffSummary === null ? brief : `${handoffSummary}\n\n${brief}` }],
     }, this.signal)
 
     return { sessionId, reused, warnings }
+  }
+
+  /**
+   * Judge a reused session against the context-compression policy and, when it
+   * is at/above the threshold, try to compact it. Returns a handoff summary when
+   * compaction could not run, which tells the caller to dispatch into a fresh
+   * session; returns null when the reused session stays in place.
+   *
+   * With the feature disabled (the documented default) this method returns
+   * immediately: no measurement, no compaction call, no log line.
+   */
+  private async guardReusedContext(
+    sessionId: string,
+    requirement: RequirementView,
+    model: ModelSelection | null,
+    projectPath: string,
+    warnings: DispatchWarning[],
+  ): Promise<string | null> {
+    const compression = this.compression
+    if (compression === null) return null
+    const config = compression.config()
+    if (!config.enabled) return null
+
+    let measurement: ContextMeasurement | null = null
+    try {
+      measurement = await compression.measure(sessionId, model)
+    } catch (error) {
+      measurement = null
+      this.log(`[dsh-mate] context measurement failed for ${sessionId}: ${String(error)}`)
+    }
+    const decision = decideContextAction({ config, measurement })
+    const logBase = {
+      decision,
+      sessionId,
+      requirementNumber: requirement.number,
+      requirementId: requirement.id,
+    }
+    if (decision.action !== 'compress') {
+      this.log(formatContextDecisionLog({ ...logBase, strategy: 'none' }))
+      return null
+    }
+
+    let outcome: CompactionOutcome
+    try {
+      outcome = await compression.compact(sessionId)
+    } catch (error) {
+      outcome = { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    }
+    if (outcome.ok) {
+      this.log(formatContextDecisionLog({ ...logBase, strategy: 'compress' }))
+      return null
+    }
+
+    warnings.push({
+      code: 'context-compression-fallback',
+      message: `context compaction failed (${outcome.reason}); dispatching into a fresh session`,
+    })
+    this.log(formatContextDecisionLog({ ...logBase, strategy: 'new-session', failure: outcome.reason }))
+    const projectTitle = projectPath === requirement.projectPath
+      ? requirement.projectTitle
+      : baseName(projectPath)
+    return buildHandoffSummary({
+      projectPath,
+      projectTitle,
+      requirementTitle: requirement.title,
+      requirementBrief: requirement.brief,
+      completedWorkItems: completedWorkItemsOf(requirement),
+      remainingWorkItems: remainingWorkItemsOf(requirement),
+      previousSessionId: sessionId,
+    })
   }
 
   /**
@@ -231,6 +347,27 @@ export class Dispatcher {
       // Cancelling an already-finished session is not an error for the board.
     }
   }
+}
+
+/**
+ * Work already recorded as finished for this requirement, used by the handoff
+ * summary. `result` is written when a dispatched session ended, so a redispatch
+ * after rework can carry the previous acceptance verdicts forward.
+ */
+function completedWorkItemsOf(requirement: RequirementView): string[] {
+  const result = requirement.result
+  if (result === null) return []
+  const met = result.acceptance.filter((item) => item.met).map((item) => item.item)
+  if (met.length > 0) return met
+  const summary = result.doneSummary.trim()
+  return summary.length > 0 ? [summary] : []
+}
+
+/** Work still open for this requirement, for the optional remaining section. */
+function remainingWorkItemsOf(requirement: RequirementView): string[] {
+  const remaining = requirement.result?.remaining ?? []
+  if (remaining.length > 0) return remaining
+  return (requirement.analysis?.subTasks ?? []).map((task) => task.title)
 }
 
 function placeholderMate(): MateView {

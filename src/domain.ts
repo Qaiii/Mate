@@ -1,15 +1,19 @@
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
+import { DEFAULT_CONTEXT_COMPRESSION } from './compression.js'
 import type {
   AnalysisView,
+  ContextCompressionConfig,
   DiscussionEntryView,
   DispatchView,
   MateView,
   ModelSelection,
   PlanView,
+  QueueEntryView,
   RequirementErrorView,
   RequirementView,
   ResultView,
+  ScheduleConfig,
   SplitItemView,
   SubTaskView,
 } from './shared.js'
@@ -33,12 +37,54 @@ export interface MateGlobalRecord {
   lastProjectPath?: string | null
   /** Diagnostics: when the Host half last initialized. */
   lastStartedAt?: number
+  /** Model availability windows + holiday dates; absent on pre-feature records. */
+  schedule?: ScheduleConfig
+  /** Pre-dispatch context compression policy; absent on pre-feature records. */
+  contextCompression?: ContextCompressionConfig
+  /** Browser IANA zone last reported by the DSH web client. */
+  clientTimeZone?: string | null
 }
 
 const ModelSelectionSchema: z.ZodType<ModelSelection> = z.object({
   provider: z.string(),
   model: z.string(),
   reasoningEffort: z.string().optional(),
+})
+
+const DisabledWindowSchema = z.object({
+  kind: z.union([
+    z.enum(['weekday', 'weekend', 'holiday']),
+    z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])),
+  ]),
+  start: z.string(),
+  end: z.string(),
+})
+
+const ScheduleSchema: z.ZodType<ScheduleConfig> = z.object({
+  models: z.array(z.object({
+    provider: z.string(),
+    model: z.string(),
+    disabledWindows: z.array(DisabledWindowSchema),
+  })),
+  holidays: z.array(z.string()),
+  timezone: z.string().nullable(),
+})
+
+/** Optional so a pre-feature `mate.json` (without the section) still validates. */
+const ContextCompressionSchema: z.ZodType<ContextCompressionConfig> = z.object({
+  enabled: z.boolean(),
+  threshold: z.number(),
+})
+
+const QueueEntrySchema: z.ZodType<QueueEntryView> = z.object({
+  phase: z.enum(['analyze', 'dispatch']),
+  reason: z.string(),
+  model: ModelSelectionSchema.nullable(),
+  window: z.string().optional(),
+  enqueuedAt: z.number(),
+  nextWakeAt: z.number().nullable(),
+  timezone: z.string(),
+  attempts: z.number(),
 })
 
 const MateSchema: z.ZodType<MateView> = z.object({
@@ -87,6 +133,7 @@ const AnalysisSchema: z.ZodType<AnalysisView> = z.object({
   model: z.string().optional(),
   title: z.string().optional(),
   sessionModel: ModelSelectionSchema.nullable().optional(),
+  reuseSessionId: z.string().nullable().optional(),
   priority: z.enum(['low', 'normal', 'high']).optional(),
   summary: z.string(),
   confidence: z.number(),
@@ -101,7 +148,7 @@ const AnalysisSchema: z.ZodType<AnalysisView> = z.object({
 
 const PlanSchema: z.ZodType<PlanView> = z.object({
   targetProjectPath: z.string().nullable(),
-  dispatchMode: z.enum(['new', 'reuse-idle']),
+  dispatchMode: z.enum(['auto', 'new', 'reuse-idle']),
   extraInstruction: z.string(),
   at: z.number(),
 })
@@ -152,7 +199,7 @@ const RequirementSchema: z.ZodType<RequirementView> = z.object({
   parentId: z.string().nullable(),
   kind: z.enum(['requirement', 'goal']),
   status: z.enum([
-    'draft', 'analyzing', 'clarifying', 'proposed', 'approved',
+    'draft', 'analyzing', 'clarifying', 'proposed', 'approved', 'queued',
     'conflict', 'running', 'awaiting_review', 'done', 'failed', 'cancelled',
   ]),
   autonomy: z.enum(['confirm', 'auto']),
@@ -165,6 +212,7 @@ const RequirementSchema: z.ZodType<RequirementView> = z.object({
   dispatch: DispatchSchema.nullable(),
   result: ResultSchema.nullable(),
   errors: z.array(RequirementErrorSchema),
+  queue: QueueEntrySchema.nullable().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
   rev: z.number(),
@@ -184,6 +232,9 @@ const GlobalSchema: z.ZodType<MateGlobalRecord> = z.object({
   reuseIdleSession: z.boolean(),
   lastProjectPath: z.string().nullable().optional(),
   lastStartedAt: z.number().optional(),
+  schedule: ScheduleSchema.optional(),
+  contextCompression: ContextCompressionSchema.optional(),
+  clientTimeZone: z.string().nullable().optional(),
 })
 
 /** A session the user chose not to show as an untracked board card. */
@@ -201,7 +252,19 @@ const HiddenSessionSchema: z.ZodType<HiddenSessionRecord> = z.object({
 export const mateDomain = defineDomain({
   name: 'mate',
   version: 1,
-  global: { schema: GlobalSchema, initial: { seq: 0, defaultMateId: null, pollMs: 2500, reuseIdleSession: false, lastProjectPath: null } },
+  global: {
+    schema: GlobalSchema,
+    initial: {
+      seq: 0,
+      defaultMateId: null,
+      pollMs: 2500,
+      reuseIdleSession: false,
+      lastProjectPath: null,
+      schedule: { models: [], holidays: [], timezone: null },
+      contextCompression: { ...DEFAULT_CONTEXT_COMPRESSION },
+      clientTimeZone: null,
+    },
+  },
   tables: {
     mates: domainTable<string, MateView>(MateSchema),
     requirements: domainTable<string, RequirementView>(RequirementSchema),
@@ -211,7 +274,3 @@ export const mateDomain = defineDomain({
 })
 
 export type MateDomain = typeof mateDomain
-
-
-
-
