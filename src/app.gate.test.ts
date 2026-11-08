@@ -10,6 +10,7 @@ import { mateDomain, type MateDomain, type MateGlobalRecord } from './domain.js'
 import { MateStore } from './store.js'
 import {
   COMMANDS,
+  MAX_QUEUE_LENGTH,
   type DisabledWindow,
   type MateView,
   type ModelSelection,
@@ -17,6 +18,7 @@ import {
   type ScheduleConfig,
   type SettingsView,
 } from './shared.js'
+import type { HolidayDataBundle } from './holidays.js'
 
 /** Monday 2026-01-05 10:00 UTC — inside the weekday 00:00-12:00 test window. */
 const BASE = Date.UTC(2026, 0, 5, 10, 0, 0)
@@ -42,7 +44,7 @@ afterEach(() => {
 })
 
 function scheduleConfig(models: ScheduleConfig['models']): ScheduleConfig {
-  return { models, holidays: [], timezone: 'UTC' }
+  return { models, holidays: [], workdays: [], useBuiltinHolidays: true, timezone: 'UTC' }
 }
 
 /** A schedule that disables one route for weekday mornings (00:00-12:00 UTC). */
@@ -243,6 +245,8 @@ interface HarnessOptions {
   clock?: { value: number }
   /** Persist this schedule before the app is created (undefined keeps the domain as-is). */
   schedule?: ScheduleConfig
+  /** Holiday data override; `null` simulates a failed data load (weekend-only fallback). */
+  holidayData?: HolidayDataBundle | null
 }
 
 async function createHarness(options: HarnessOptions = {}) {
@@ -268,6 +272,7 @@ async function createHarness(options: HarnessOptions = {}) {
     log: (message) => { log.push(message) },
     now: () => clock.value,
     timers: { set: timers.set, clear: timers.clear },
+    ...(options.holidayData === undefined ? {} : { holidayData: options.holidayData }),
   })
   return { app, store, domain, clock, timers, log, analyzed, calls }
 }
@@ -580,6 +585,8 @@ describe('schedule settings', () => {
     const config: ScheduleConfig = {
       models: [{ provider: 'p', model: 'm', disabledWindows: [WEEKDAY_MORNING] }],
       holidays: ['2026-01-01'],
+      workdays: ['2026-01-04'],
+      useBuiltinHolidays: false,
       timezone: 'UTC',
     }
 
@@ -613,6 +620,8 @@ describe('schedule settings', () => {
     const config: ScheduleConfig = {
       models: [],
       holidays: ['2026-05-01', '2026-05-02', '2026-10-01'],
+      workdays: [],
+      useBuiltinHolidays: false,
       timezone: null,
     }
     await first.app.command({ command: COMMANDS.settingsUpdate, args: { schedule: config } })

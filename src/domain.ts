@@ -67,6 +67,10 @@ const ScheduleSchema: z.ZodType<ScheduleConfig> = z.object({
     disabledWindows: z.array(DisabledWindowSchema),
   })),
   holidays: z.array(z.string()),
+  // Defaults keep a pre-feature `mate.json` readable: manual overrides empty,
+  // built-in China holiday data on.
+  workdays: z.array(z.string()).default([]),
+  useBuiltinHolidays: z.boolean().default(true),
   timezone: z.string().nullable(),
 })
 
@@ -260,7 +264,7 @@ export const mateDomain = defineDomain({
       pollMs: 2500,
       reuseIdleSession: false,
       lastProjectPath: null,
-      schedule: { models: [], holidays: [], timezone: null },
+      schedule: { models: [], holidays: [], workdays: [], useBuiltinHolidays: true, timezone: null },
       contextCompression: { ...DEFAULT_CONTEXT_COMPRESSION },
       clientTimeZone: null,
     },

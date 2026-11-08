@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { extractJsonObject, normalizeAnalysis, normalizeMemory, normalizeResult } from '../src/analyzer.js'
-import { mergeMemory, parseDispatchModels, resolveDispatchModel } from '../src/app.js'
+import { mergeMemory, parseDispatchModels, resolveDispatchModel, validateReuseSession } from '../src/app.js'
 import { buildBrief } from '../src/dispatch.js'
 import { isTerminal, statusLabel } from '../src/shared.js'
 import type { MateView, RequirementView } from '../src/shared.js'
@@ -96,6 +96,12 @@ describe('normalizeAnalysis', () => {
     expect(value.suggestedProjectPath).toBeNull()
   })
 
+  it('keeps the reuse choice and clears junk', () => {
+    expect(normalizeAnalysis({ reuseSessionId: 'session-1' }).reuseSessionId).toBe('session-1')
+    expect(normalizeAnalysis({ reuseSessionId: 42 }).reuseSessionId).toBeNull()
+    expect(normalizeAnalysis({}).reuseSessionId).toBeNull()
+  })
+
   it('treats questions as a clarification signal', () => {
     const value = normalizeAnalysis({ questions: ['Which project?'] })
     expect(value.needsClarification).toBe(true)
@@ -144,6 +150,13 @@ describe('buildBrief', () => {
     }), mate)
     expect(brief).toContain('# Extra instruction')
     expect(brief).toContain('Use TypeScript only')
+  })
+
+  it('marks a reused session as a continuation', () => {
+    const followUp = buildBrief(requirement(), mate, 'D:\\repo', true)
+    expect(followUp).toContain('continues the work already done in this session')
+    const fresh = buildBrief(requirement(), mate, 'D:\\repo', false)
+    expect(fresh).not.toContain('continues the work already done in this session')
   })
 })
 
@@ -221,6 +234,26 @@ describe('dispatch model restrictions', () => {
   })
 })
 
+describe('reuse session validation', () => {
+  const candidates = [
+    { sessionId: 's1', title: 'Mate · A', updatedAt: 1 },
+    { sessionId: 's2', title: 'Mate · B', updatedAt: 2 },
+  ]
+
+  it('keeps an id the Host offered to the model', () => {
+    expect(validateReuseSession(candidates, 's2')).toBe('s2')
+  })
+
+  it('drops an invented id', () => {
+    expect(validateReuseSession(candidates, 'session-made-up')).toBeNull()
+  })
+
+  it('treats null and undefined as no reuse', () => {
+    expect(validateReuseSession(candidates, null)).toBeNull()
+    expect(validateReuseSession(candidates, undefined)).toBeNull()
+  })
+})
+
 describe('status helpers', () => {
   it('only done and cancelled are terminal', () => {
     expect(isTerminal('done')).toBe(true)
@@ -234,3 +267,4 @@ describe('status helpers', () => {
     expect(statusLabel('awaiting_review')).toBe('待验收')
   })
 })
+

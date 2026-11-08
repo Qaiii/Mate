@@ -313,6 +313,9 @@ export function MatePanel(context: PanelContext): React.ReactElement {
                 </span>
               ) : null}
               {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
+              {requirement.dispatch?.reused === true || (requirement.dispatch === null && (requirement.analysis?.reuseSessionId ?? null) !== null) ? (
+                <Badge tone="confirm">{t('badge.reuse')}</Badge>
+              ) : null}
             </button>
             )
           })}
@@ -518,6 +521,9 @@ function RequirementCard({ requirement, t, lang, childrenCount, onOpen, onOpenSe
           ) : null}
           {requirement.kind === 'goal' ? <Badge tone="goal">{t('badge.goal')}</Badge> : null}
           {requirement.dispatch?.pendingInput.length ? <Badge tone="warn">{t('badge.needsInput')}</Badge> : null}
+          {requirement.dispatch?.reused === true || (requirement.dispatch === null && (requirement.analysis?.reuseSessionId ?? null) !== null) ? (
+            <Badge tone="confirm">{t('badge.reuse')}</Badge>
+          ) : null}
           <span>{t(`status.${status}`)}</span>
         </span>
         <span className="mate-card-foot">

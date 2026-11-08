@@ -44,6 +44,8 @@ function scheduleOf(windows: DisabledWindow[], overrides: Partial<ScheduleConfig
   return {
     models: [entryOf(windows)],
     holidays: [],
+    workdays: [],
+    useBuiltinHolidays: true,
     timezone: null,
     ...overrides,
   }
@@ -92,7 +94,13 @@ describe('WEEKDAYS', () => {
 
 describe('emptySchedule / empty config', () => {
   it('is the no-config value', () => {
-    expect(emptySchedule()).toEqual({ models: [], holidays: [], timezone: null })
+    expect(emptySchedule()).toEqual({
+      models: [],
+      holidays: [],
+      workdays: [],
+      useBuiltinHolidays: true,
+      timezone: null,
+    })
   })
 
   it('accepts an empty config and generates no windows', () => {
@@ -630,6 +638,8 @@ describe('evaluateModelRoute', () => {
         windowOf('holiday', '14:00', '16:00'),
       ])],
       holidays: [CHRISTMAS],
+      workdays: [],
+      useBuiltinHolidays: true,
       timezone: null,
     }
 

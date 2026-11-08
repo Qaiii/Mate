@@ -64,16 +64,32 @@ export interface ModelSchedule {
 
 /**
  * Plugin-wide model availability configuration. Persisted in the Mate storage
- * domain; an empty `models` array and empty `holidays` mean "always available,
- * no holidays" and generates no disabled windows.
+ * domain; an empty `models` array means "no disabled window" (a model without a
+ * schedule entry is always available).
+ *
+ * The built-in China statutory-holiday/调休 dataset applies by default; the
+ * manual `holidays` / `workdays` lists override it per date. An unavailable or
+ * year-uncovered dataset degrades to weekend-only judging (reported by
+ * `HolidayCalendar.degraded` and logged by the Host), never to an error.
  */
 export interface ScheduleConfig {
   models: ModelSchedule[]
-  /** `YYYY-MM-DD` local dates treated as holidays. */
+  /** Manual `YYYY-MM-DD` additions to the holiday set; also overrides a built-in makeup workday. */
   holidays: string[]
+  /** Manual `YYYY-MM-DD` makeup workdays (调休上班日); such a date is judged as a working day. */
+  workdays: string[]
+  /** Apply the built-in China statutory-holiday + 调休 dataset. Defaults to `true`. */
+  useBuiltinHolidays: boolean
   /** Manual IANA override; `null` follows the DSH client zone, then the host zone. */
   timezone: string | null
 }
+
+/**
+ * Maximum number of requirements waiting in the model-availability FIFO queue.
+ * A new requirement is rejected with `queue-full` once the queue is full, so a
+ * month of off-window submissions cannot grow the queue without bound.
+ */
+export const MAX_QUEUE_LENGTH = 50
 
 /**
  * Pre-dispatch context compression policy.

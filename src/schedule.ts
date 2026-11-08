@@ -28,6 +28,8 @@ export interface ValidationIssue {
     | 'zero-length'
     | 'overlap'
     | 'holiday-format'
+    | 'workday-format'
+    | 'holiday-toggle'
     | 'timezone'
   /** Dotted path, e.g. `models[0].disabledWindows[1].start`. */
   path: string
@@ -42,7 +44,7 @@ export type ScheduleValidation =
 
 /** The default no-config schedule: no windows, no holidays, no override. */
 export function emptySchedule(): ScheduleConfig {
-  return { models: [], holidays: [], timezone: null }
+  return { models: [], holidays: [], workdays: [], useBuiltinHolidays: true, timezone: null }
 }
 
 /**
@@ -67,8 +69,11 @@ export function emptySchedule(): ScheduleConfig {
  *   an explicit list, and the holiday family for `'holiday'` (holiday windows
  *   are mutually exclusive with weekday/weekend windows: the holiday branch
  *   takes precedence);
- * - `holidays` entries must match `^\d{4}-\d{2}-\d{2}$` and be a real calendar
- *   date (`holiday-format`);
+ * - `holidays` / `workdays` entries must match `^\d{4}-\d{2}-\d{2}$` and be
+ *   real calendar dates (`holiday-format` / `workday-format`); each list is
+ *   de-duplicated and sorted; a `workdays` date is a manual 调休上班日 override;
+ * - `useBuiltinHolidays` is a boolean and defaults to `true` when absent
+ *   (`holiday-toggle`);
  * - `timezone` is `null` or an IANA zone id accepted by `Intl`
  *   (`timezone`).
  */
@@ -169,25 +174,21 @@ export function validateScheduleConfig(raw: unknown): ScheduleValidation {
     }
   }
 
-  const holidays: string[] = []
-  const rawHolidays = raw.holidays
-  if (rawHolidays !== null && rawHolidays !== undefined) {
-    if (!Array.isArray(rawHolidays)) {
-      errors.push({ code: 'shape', path: 'holidays', message: 'holidays must be an array' })
-    } else {
-      const seen = new Set<string>()
-      rawHolidays.forEach((value, index) => {
-        if (typeof value !== 'string' || !isRealDate(value)) {
-          errors.push({
-            code: 'holiday-format',
-            path: `holidays[${index}]`,
-            message: 'holiday must be a real YYYY-MM-DD date',
-          })
-        } else {
-          seen.add(value)
-        }
+  const holidays = normalizeDateList(raw.holidays, 'holidays', 'holiday-format', errors)
+  const workdays = normalizeDateList(raw.workdays, 'workdays', 'workday-format', errors)
+
+  // Missing toggle keeps the feature on: the built-in calendar applies by default.
+  let useBuiltinHolidays = true
+  const rawToggle = raw.useBuiltinHolidays
+  if (rawToggle !== null && rawToggle !== undefined) {
+    if (typeof rawToggle !== 'boolean') {
+      errors.push({
+        code: 'holiday-toggle',
+        path: 'useBuiltinHolidays',
+        message: 'useBuiltinHolidays must be a boolean',
       })
-      holidays.push(...[...seen].sort())
+    } else {
+      useBuiltinHolidays = rawToggle
     }
   }
 
@@ -206,7 +207,40 @@ export function validateScheduleConfig(raw: unknown): ScheduleValidation {
   }
 
   if (errors.length > 0) return { ok: false, errors }
-  return { ok: true, value: { models, holidays, timezone } }
+  return { ok: true, value: { models, holidays, workdays, useBuiltinHolidays, timezone } }
+}
+
+/**
+ * Validate and canonicalize one `YYYY-MM-DD` list (holidays or makeup workdays):
+ * de-duplicated and sorted; malformed or impossible dates produce one issue per
+ * offending entry so the settings page can point at the exact index.
+ */
+function normalizeDateList(
+  raw: unknown,
+  path: string,
+  code: 'holiday-format' | 'workday-format',
+  errors: ValidationIssue[],
+): string[] {
+  const dates: string[] = []
+  if (raw === null || raw === undefined) return dates
+  if (!Array.isArray(raw)) {
+    errors.push({ code: 'shape', path, message: `${path} must be an array` })
+    return dates
+  }
+  const seen = new Set<string>()
+  raw.forEach((value, index) => {
+    if (typeof value !== 'string' || !isRealDate(value)) {
+      errors.push({
+        code,
+        path: `${path}[${index}]`,
+        message: `${path === 'workdays' ? 'makeup workday' : 'holiday'} must be a real YYYY-MM-DD date`,
+      })
+    } else {
+      seen.add(value)
+    }
+  })
+  dates.push(...[...seen].sort())
+  return dates
 }
 
 /**
@@ -285,7 +319,10 @@ export function localParts(nowMs: number, timezone: string): LocalParts | null {
   return localPartsWith(formatter, nowMs)
 }
 
-/** Which calendar rule decides today's availability. Holidays win. */
+/**
+ * Which calendar rule decides today's availability. A makeup workday resolves
+ * to `'weekday'`; `'holiday'` outranks the ordinary weekend rule.
+ */
 export type DayBranch = 'weekday' | 'weekend' | 'holiday'
 
 export type AvailabilityReason =
@@ -341,12 +378,28 @@ export function holidaySetOf(
   return set
 }
 
+/** Normalize the manual makeup-workday list of a schedule into a lookup set. */
+export function workdaySetOf(
+  schedule: ScheduleConfig | null | undefined,
+): Set<string> {
+  const set = new Set<string>()
+  if (schedule === null || schedule === undefined || !Array.isArray(schedule.workdays)) return set
+  for (const value of schedule.workdays) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (trimmed !== '') set.add(trimmed)
+  }
+  return set
+}
+
 /**
  * Judge one model at one injected instant. Never reads the system clock.
  *
  * Semantics:
- * - `branch` is `'holiday'` when `localParts(...).dateKey` is in `holidays`,
- *   else `'weekend'` for Saturday/Sunday, else `'weekday'`;
+ * - `branch` is `'weekday'` when `localParts(...).dateKey` is in the makeup
+ *   `workdays` set (调休上班日, even on a Saturday/Sunday), else `'holiday'`
+ *   when it is in `holidays`, else `'weekend'` for Saturday/Sunday, else
+ *   `'weekday'`;
  * - a window applies when its `kind` matches the branch: `'holiday'` windows
  *   only on the holiday branch; `'weekday'`/`'weekend'` only on their branch;
  *   an explicit weekday array only when that weekday matches (non-holiday);
@@ -364,6 +417,7 @@ export function isModelAvailable(
   entry: ModelSchedule | undefined,
   timezone: string,
   holidays: ReadonlySet<string> | readonly string[],
+  workdays?: ReadonlySet<string> | readonly string[],
 ): AvailabilityResult {
   const zone = isValidTimeZone(timezone) ? timezone.trim() : 'UTC'
   const formatter = formatterFor(zone)
@@ -382,14 +436,15 @@ export function isModelAvailable(
   }
 
   const holidaySet = toHolidaySet(holidays)
+  const workdaySet = toWorkdaySet(workdays)
   const windows = entry !== undefined && Array.isArray(entry.disabledWindows) ? entry.disabledWindows : []
-  const branch = branchAt(parts, holidaySet)
+  const branch = branchAt(parts, holidaySet, workdaySet)
 
   if (windows.length === 0) {
     return { available: true, branch, reason: 'no-config', window: null, nextAvailableAt: null, timezone: zone }
   }
 
-  const blocking = blockingWindowAt(parts, windows, holidaySet)
+  const blocking = blockingWindowAt(parts, windows, holidaySet, workdaySet)
   if (blocking === null) {
     return {
       available: true,
@@ -406,7 +461,7 @@ export function isModelAvailable(
     branch,
     reason: 'inside-window',
     window: blocking,
-    nextAvailableAt: firstAvailableAt(nowMs, formatter!, windows, holidaySet),
+    nextAvailableAt: firstAvailableAt(nowMs, formatter!, windows, holidaySet, workdaySet),
     timezone: zone,
   }
 }
@@ -419,10 +474,57 @@ export function evaluateModelRoute(input: {
   model: string
   timezone: string
   holidays?: ReadonlySet<string> | readonly string[]
+  workdays?: ReadonlySet<string> | readonly string[]
 }): AvailabilityResult {
   const entry = findModelSchedule(input.schedule, input.provider, input.model)
   const holidays = input.holidays ?? holidaySetOf(input.schedule)
-  return isModelAvailable(input.nowMs, entry, input.timezone, holidays)
+  const workdays = input.workdays ?? workdaySetOf(input.schedule)
+  return isModelAvailable(input.nowMs, entry, input.timezone, holidays, workdays)
+}
+
+/** One provider/model route to judge. */
+export interface ModelRoute {
+  provider: string
+  model: string
+}
+
+/** One route plus its availability judgement at the requested instant. */
+export interface ModelAvailability extends ModelRoute, AvailabilityResult {}
+
+export interface ModelAvailabilityInput {
+  nowMs: number
+  schedule: ScheduleConfig | null | undefined
+  /** Routes to judge; duplicates are kept in input order (callers de-duplicate the catalog). */
+  routes: readonly ModelRoute[]
+  timezone: string
+  /** Effective holiday set; defaults to the schedule's manual list. */
+  holidays?: ReadonlySet<string> | readonly string[]
+  /** Effective makeup-workday set; defaults to the schedule's manual list. */
+  workdays?: ReadonlySet<string> | readonly string[]
+}
+
+/**
+ * Judge a list of routes at one instant and return every judgement, in input
+ * order. Pure: no clock, no I/O. Used by the Host/client to answer "which
+ * models are available right now" and "when does each become available".
+ */
+export function modelAvailabilityAt(input: ModelAvailabilityInput): ModelAvailability[] {
+  const schedule = input.schedule ?? null
+  const holidays = input.holidays ?? holidaySetOf(schedule)
+  const workdays = input.workdays ?? workdaySetOf(schedule)
+  const timezone = typeof input.timezone === 'string' ? input.timezone : 'UTC'
+  return input.routes.map((route) => {
+    const entry = findModelSchedule(schedule, route.provider, route.model)
+    const result = isModelAvailable(input.nowMs, entry, timezone, holidays, workdays)
+    return { provider: route.provider, model: route.model, ...result }
+  })
+}
+
+/** The subset of `routes` that is available at `input.nowMs`, in input order. */
+export function availableModelRoutes(input: ModelAvailabilityInput): ModelRoute[] {
+  return modelAvailabilityAt(input)
+    .filter((judgement) => judgement.available)
+    .map(({ provider, model }) => ({ provider, model }))
 }
 
 /** Human-readable one-line summary of a window, e.g. `weekday 22:00-06:00`. */
@@ -570,7 +672,14 @@ function windowMatchesDay(window: DisabledWindow, branch: DayBranch, weekday: nu
   return kind.includes(WEEKDAYS[weekday])
 }
 
-function branchAt(parts: LocalParts, holidays: ReadonlySet<string>): DayBranch {
+function branchAt(
+  parts: LocalParts,
+  holidays: ReadonlySet<string>,
+  workdays: ReadonlySet<string>,
+): DayBranch {
+  // A makeup workday (调休上班日) outranks the weekend/holiday rules: it is a
+  // working day even when it falls on a Saturday or inside a holiday range.
+  if (workdays.has(parts.dateKey)) return 'weekday'
   if (holidays.has(parts.dateKey)) return 'holiday'
   return parts.weekday >= 5 ? 'weekend' : 'weekday'
 }
@@ -579,8 +688,9 @@ function blockingWindowAt(
   parts: LocalParts,
   windows: readonly DisabledWindow[],
   holidays: ReadonlySet<string>,
+  workdays: ReadonlySet<string>,
 ): DisabledWindow | null {
-  const branch = branchAt(parts, holidays)
+  const branch = branchAt(parts, holidays, workdays)
   const minuteOfDay = parts.hour * 60 + parts.minute
   for (const window of windows) {
     if (windowMatchesDay(window, branch, parts.weekday) && windowContains(window, minuteOfDay)) return window
@@ -593,21 +703,30 @@ function firstAvailableAt(
   formatter: Intl.DateTimeFormat,
   windows: readonly DisabledWindow[],
   holidays: ReadonlySet<string>,
+  workdays: ReadonlySet<string>,
 ): number | null {
   const firstMinute = Math.floor(nowMs / 60_000) + 1
   for (let offset = 0; offset < MAX_SCAN_MINUTES; offset += 1) {
     const candidate = (firstMinute + offset) * 60_000
     const parts = localPartsWith(formatter, candidate)
     if (parts === null) return null
-    if (blockingWindowAt(parts, windows, holidays) === null) return candidate
+    if (blockingWindowAt(parts, windows, holidays, workdays) === null) return candidate
   }
   return null
 }
 
 function toHolidaySet(holidays: ReadonlySet<string> | readonly string[]): Set<string> {
-  if (holidays === null || holidays === undefined) return new Set()
+  return toDateSet(holidays)
+}
+
+function toWorkdaySet(workdays: ReadonlySet<string> | readonly string[] | undefined): Set<string> {
+  return toDateSet(workdays)
+}
+
+function toDateSet(values: ReadonlySet<string> | readonly string[] | undefined | null): Set<string> {
+  if (values === null || values === undefined) return new Set()
   const set = new Set<string>()
-  for (const value of holidays) {
+  for (const value of values) {
     if (typeof value !== 'string') continue
     const trimmed = value.trim()
     if (trimmed !== '') set.add(trimmed)

@@ -7,8 +7,10 @@
  * except for the explicit `Date.now()` in {@link tryModelAvailability}, which
  * only feeds the live availability preview.
  */
-import { WEEKDAYS, describeWindow, isModelAvailable, validateScheduleConfig } from '../schedule.js'
+import { resolveHolidayCalendar } from '../holidays.js'
+import { WEEKDAYS, describeWindow, isModelAvailable, modelAvailabilityAt, validateScheduleConfig } from '../schedule.js'
 import type { AvailabilityResult, ScheduleValidation, ValidationIssue } from '../schedule.js'
+import type { HolidayCalendar } from '../holidays.js'
 import type {
   DisabledWindow,
   ModelSchedule,
@@ -18,14 +20,15 @@ import type {
 } from '../shared.js'
 import type { Translator } from './locales.js'
 
-/** A disabled-window configuration with no routes, holidays or override. */
+/** A disabled-window configuration with no routes, holidays, workdays or override. */
 export function emptyScheduleDraft(): ScheduleConfig {
-  return { models: [], holidays: [], timezone: null }
+  return { models: [], holidays: [], workdays: [], useBuiltinHolidays: true, timezone: null }
 }
 
 /**
  * Deep copy of a persisted schedule so editing never mutates the snapshot in
- * place. Tolerates a missing/legacy value from an older Host.
+ * place. Tolerates a missing/legacy value from an older Host: absent
+ * `workdays`/`useBuiltinHolidays` read as an empty list / the built-in data on.
  */
 export function cloneSchedule(config: ScheduleConfig | null | undefined): ScheduleConfig {
   return {
@@ -39,7 +42,22 @@ export function cloneSchedule(config: ScheduleConfig | null | undefined): Schedu
       })),
     })),
     holidays: [...(config?.holidays ?? [])],
+    workdays: [...(config?.workdays ?? [])],
+    useBuiltinHolidays: config?.useBuiltinHolidays !== false,
     timezone: config?.timezone ?? null,
+  }
+}
+
+/**
+ * Resolve the effective holiday / makeup-workday calendar of a draft, or `null`
+ * when the pure resolver is unavailable. Never throws: the settings preview is
+ * advisory and must not crash on a half-edited configuration.
+ */
+export function tryResolveHolidayCalendar(config: ScheduleConfig | null | undefined): HolidayCalendar | null {
+  try {
+    return resolveHolidayCalendar(config)
+  } catch {
+    return null
   }
 }
 
@@ -244,10 +262,11 @@ export function issueMessage(t: Translator, issue: ValidationIssue): string {
 export function tryModelAvailability(
   entry: ModelSchedule | undefined,
   timezone: string,
-  holidays: readonly string[],
+  holidays: ReadonlySet<string> | readonly string[],
+  workdays?: ReadonlySet<string> | readonly string[],
 ): AvailabilityResult | null {
   try {
-    return isModelAvailable(Date.now(), entry, timezone, holidays)
+    return isModelAvailable(Date.now(), entry, timezone, holidays, workdays)
   } catch {
     return null
   }

@@ -35,9 +35,9 @@ export interface SnapshotSource {
   timezone(): TimeZoneView
 }
 
-/** The no-config schedule: no disabled windows, no holidays, no zone override. */
+/** The no-config schedule: no disabled windows, no manual holidays, no zone override. */
 export function emptyScheduleConfig(): ScheduleConfig {
-  return { models: [], holidays: [], timezone: null }
+  return { models: [], holidays: [], workdays: [], useBuiltinHolidays: true, timezone: null }
 }
 
 export function newRequirementId(): string {

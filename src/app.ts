@@ -7,10 +7,17 @@ import { isDirectory, normalizeProjectPath } from './projects.js'
 import type { MateGlobalRecord, ProjectRecord } from './domain.js'
 import { MateQueue } from './scheduler.js'
 import {
+  defaultHolidayData,
+  resolveHolidayCalendar,
+  type HolidayCalendar,
+  type HolidayDataBundle,
+} from './holidays.js'
+import {
   describeWindow,
   evaluateModelRoute,
   hostTimeZone,
   isValidTimeZone,
+  localParts,
   resolveEffectiveTimeZone,
   validateScheduleConfig,
 } from './schedule.js'
@@ -27,6 +34,7 @@ import {
 import {
   COMMANDS,
   isTerminal,
+  MAX_QUEUE_LENGTH,
   PLUGIN_VERSION,
   type AnalysisView,
   type AutonomyMode,
@@ -42,6 +50,7 @@ import {
   type MateDistillView,
   type ModelEffortsView,
   type MateMemoryEntry,
+  type ScheduleConfig,
   type SessionTranscriptMessage,
   type SessionTranscriptView,
   type SettingsView,
@@ -81,6 +90,12 @@ export interface AppDeps {
   now?: () => number
   /** Injected queue timer functions; default to the global timers. */
   timers?: AppTimers
+  /**
+   * Holiday dataset override. Omitted uses the built-in China data; `null`
+   * simulates a failed data load so tests can assert the weekend-only fallback
+   * (the Host logs the degradation and keeps scheduling).
+   */
+  holidayData?: HolidayDataBundle | null
 }
 
 /** One model-route judgement plus the queue fields it produces. */
@@ -110,6 +125,8 @@ export class MateApp {
   private readonly background = new Set<Promise<void>>()
   private readonly requestCache = new Map<string, unknown>()
   private queueChain: Promise<unknown> = Promise.resolve()
+  /** Holiday-degradation log keys already emitted (once per missing scope). */
+  private readonly holidayWarnings = new Set<string>()
   private readonly dispatcher: Dispatcher
   private workspaceController: WorkspaceControllerLike | null
   private readonly clock: () => number
@@ -426,6 +443,16 @@ export class MateApp {
   private async createRequirement(args: Record<string, unknown>): Promise<RequirementView> {
     // One input is enough: the body is the requirement, the Mate names the card.
     const brief = requiredString(args.brief, 'brief-required', 'A requirement is required')
+    // The waiting queue is bounded. Reject before creating any record so the
+    // user gets one clear message instead of an unbounded backlog; the client
+    // maps the `queue-full` code onto localized copy.
+    const queuedCount = this.deps.store.queuedRequirements().length
+    if (queuedCount >= MAX_QUEUE_LENGTH) {
+      throw new CommandError(
+        'queue-full',
+        `the model-availability queue is full (${MAX_QUEUE_LENGTH}); wait for a queued requirement to start before submitting another`,
+      )
+    }
     const title = optionalString(args.title).slice(0, 200) || firstLineTitle(brief)
     const settings = this.deps.store.settings()
     const mateId = typeof args.mateId === 'string' && args.mateId.length > 0
@@ -804,7 +831,10 @@ export class MateApp {
     await this.deps.store.updateSettings(patch)
     // A newly-opened window must be re-evaluated now, not at the stale stored
     // wake instant: judge every queued requirement with the edited schedule.
-    if (scheduleChanged) await this.reevaluateQueue()
+    if (scheduleChanged) {
+      this.holidayDiagnostics()
+      await this.reevaluateQueue()
+    }
     const settings = this.deps.store.settings()
     return {
       defaultMateId: settings.defaultMateId,
@@ -1191,6 +1221,11 @@ export class MateApp {
       client: settings.clientTimeZone ?? null,
       host: hostTimeZone(),
     })
+    // The built-in China holiday/调休 data is folded in with the manual
+    // overrides. A missing dataset degrades to weekend-only judging and logs
+    // once; it must never block or throw.
+    const calendar = this.holidayCalendar(schedule)
+    this.logHolidayDegradation(calendar)
     if (model === null) {
       return { available: true, window: undefined, nextWakeAt: null, timezone: timezone.id }
     }
@@ -1200,7 +1235,8 @@ export class MateApp {
       provider: model.provider,
       model: model.model,
       timezone: timezone.id,
-      ...(schedule === null ? {} : { holidays: schedule.holidays }),
+      holidays: calendar.holidays,
+      workdays: calendar.workdays,
     })
     return {
       available: result.available,
@@ -1208,6 +1244,50 @@ export class MateApp {
       nextWakeAt: result.nextAvailableAt,
       timezone: result.timezone,
     }
+  }
+
+  /** The holiday data bundle in use: an injected override, else the built-in data. */
+  private holidayData(): HolidayDataBundle | null {
+    return this.deps.holidayData === undefined ? defaultHolidayData() : this.deps.holidayData
+  }
+
+  /**
+   * Effective holiday/workday sets for one schedule. The coverage diagnosis is
+   * scoped to the current local year in the effective scheduling zone.
+   */
+  private holidayCalendar(schedule: ScheduleConfig | null): HolidayCalendar {
+    const timezone = this.effectiveTimeZone()
+    const parts = localParts(this.now(), timezone.id)
+    return resolveHolidayCalendar(schedule, {
+      data: this.holidayData(),
+      ...(parts === null ? {} : { year: parts.year }),
+    })
+  }
+
+  /**
+   * Emit one warning per missing data scope when the built-in holiday data
+   * cannot judge the current year. Scheduling keeps working on the weekend rule;
+   * this is a diagnostic, never an error.
+   */
+  private logHolidayDegradation(calendar: HolidayCalendar): void {
+    if (!calendar.degraded) return
+    const key = calendar.missingYears.length > 0 ? calendar.missingYears.join(',') : 'unavailable'
+    if (this.holidayWarnings.has(key)) return
+    this.holidayWarnings.add(key)
+    if (calendar.missingYears.length > 0) {
+      this.deps.log(
+        `[dsh-mate] holidays: no built-in holiday data for ${calendar.missingYears.join(', ')}; `
+        + 'falling back to weekend-only rules',
+      )
+    } else {
+      this.deps.log('[dsh-mate] holidays: holiday data unavailable; falling back to weekend-only rules')
+    }
+  }
+
+  /** Refresh the holiday degradation diagnostics for the persisted schedule. */
+  private holidayDiagnostics(): void {
+    const schedule = this.deps.store.settings().schedule ?? null
+    this.logHolidayDegradation(this.holidayCalendar(schedule))
   }
 
   /** Persist one requirement as queued for the blocking window and re-arm the wake timer. */
@@ -1355,6 +1435,8 @@ export class MateApp {
    */
   async resume(): Promise<void> {
     if (this.lifetime.signal.aborted) return
+    // Surface a missing holiday-data year at startup, even with an empty queue.
+    this.holidayDiagnostics()
     const now = this.now()
     for (const requirement of this.deps.store.queuedRequirements()) {
       const entry = requirement.queue
