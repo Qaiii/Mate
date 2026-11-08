@@ -4,6 +4,7 @@ import { createTranslator, resolveLanguage, type Translator } from './locales.js
 import { MatePanel } from './panel.js'
 import { STYLES } from './ui.js'
 import type { MateState } from './controller.js'
+import type { PickDirectoryResult } from './types.js'
 
 export const name = 'dsh-mate'
 
@@ -21,7 +22,10 @@ interface SlotsService {
 interface ClientContext {
   effect(fn: () => () => void, label?: string): void
   slots: SlotsService
-  uiWorkspace?: { openSession(target: unknown): unknown }
+  uiWorkspace?: {
+    openSession(target: unknown): unknown
+    directoryPicker?: { pick(params?: unknown): Promise<unknown> }
+  }
   layout?: { selectPanel(panelId: string | null): void }
 }
 
@@ -38,6 +42,7 @@ interface PanelFace {
   controller: MateController
   t: Translator
   openSession: (sessionId: string) => void
+  pickDirectory: () => Promise<PickDirectoryResult>
 }
 
 interface BoundaryProps {
@@ -92,7 +97,7 @@ function MatePanelView(face: PanelFace): React.ReactElement {
   const state: MateState = React.useSyncExternalStore(face.controller.subscribe, face.controller.getSnapshot)
   return (
     <PanelErrorBoundary t={face.t}>
-      <MatePanel state={state} controller={face.controller} t={face.t} openSession={face.openSession} />
+      <MatePanel state={state} controller={face.controller} t={face.t} openSession={face.openSession} pickDirectory={face.pickDirectory} />
     </PanelErrorBoundary>
   )
 }
@@ -131,7 +136,28 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  const face: PanelFace = { controller, t, openSession }
+  /**
+   * Ask the shipped directory picker for one path. Profiles without a native
+   * chooser (for example the browser dev profile) report `unavailable` so the
+   * dialog can fall back to a manual path entry.
+   */
+  const pickDirectory = async (): Promise<PickDirectoryResult> => {
+    const picker = ctx.uiWorkspace?.directoryPicker?.pick
+    if (picker === undefined) return { path: null, unavailable: true }
+    try {
+      const result = await picker.call(ctx.uiWorkspace?.directoryPicker, {})
+      const candidate = typeof result === 'string'
+        ? result
+        : result !== null && typeof result === 'object' && typeof (result as { path?: unknown }).path === 'string'
+          ? (result as { path: string }).path
+          : ''
+      return { path: candidate.length > 0 ? candidate : null, unavailable: false }
+    } catch (error) {
+      console.warn('[dsh-mate] directory picker unavailable:', String(error))
+      return { path: null, unavailable: true }
+    }
+  }
+  const face: PanelFace = { controller, t, openSession, pickDirectory }
 
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
@@ -146,4 +172,7 @@ export function apply(ctx: ClientContext): void {
     label: () => 'Mate',
   }, MateIcon))
 }
+
+
+
 

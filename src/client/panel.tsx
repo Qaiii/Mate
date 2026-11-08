@@ -361,6 +361,7 @@ export function MatePanel(context: PanelContext): React.ReactElement {
           controller={controller}
           t={t}
           busy={busy('requirement.create')}
+          onPickDirectory={context.pickDirectory}
           onClose={() => setComposeOpen(false)}
           onSubmit={async (payload) => {
             const created = await controller.run<RequirementView>('requirement.create', COMMANDS.requirementCreate, payload)

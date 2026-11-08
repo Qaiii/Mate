@@ -298,6 +298,8 @@ export const COMMANDS = {
   requirementResolveProject: 'requirement.resolveProject',
   projectRegister: 'project.register',
   projectPickDirectory: 'project.pickDirectory',
+  projectCreate: 'project.create',
+  projectRemove: 'project.remove',
   sessionHide: 'session.hide',
   sessionTranscript: 'session.transcript',
   mateCreate: 'mate.create',
@@ -333,6 +335,8 @@ export function statusLabel(status: RequirementStatus): string {
     case 'cancelled': return '已取消'
   }
 }
+
+
 
 
 

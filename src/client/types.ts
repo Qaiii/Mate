@@ -2,12 +2,20 @@ import type { MateState, MateController } from './controller.js'
 import type { Translator } from './locales.js'
 import type { ProjectSource } from '../shared.js'
 
+/** Result of asking the host for one directory path. */
+export interface PickDirectoryResult {
+  path: string | null
+  /** True when this profile has no usable directory picker. */
+  unavailable: boolean
+}
+
 /** Props every view of the Mate panel shares. */
 export interface PanelContext {
   state: MateState
   controller: MateController
   t: Translator
   openSession: (sessionId: string) => void
+  pickDirectory: () => Promise<PickDirectoryResult>
 }
 
 export function formatRelative(timestamp: number, lang: 'zh' | 'en'): string {
@@ -41,3 +49,4 @@ export function projectSourceLabelKey(source: ProjectSource | undefined): string
   if (source === 'user-new') return 'badge.sourceUserNew'
   return 'badge.sourceAuto'
 }
+

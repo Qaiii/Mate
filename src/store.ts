@@ -121,6 +121,12 @@ export class MateStore {
     return next
   }
 
+  /** Unregister one project without touching its directory on disk. */
+  async removeProject(path: string): Promise<boolean> {
+    const removed = await this.domain.table('projects').delete(path)
+    if (removed) this.bumpRevision()
+    return removed
+  }
   /** Remove one requirement record; callers own child and session cleanup. */
   async removeRequirement(id: string): Promise<boolean> {
     const removed = await this.domain.table('requirements').delete(id)
@@ -264,4 +270,5 @@ export class MateStore {
     return segment && segment.length > 0 ? segment : path
   }
 }
+
 

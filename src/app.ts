@@ -5,6 +5,7 @@ import { newMateId, newRequirementId, type MateStore } from './store.js'
 import { planAnalysisOutcome, projectSourceOf, resolveDispatchProject } from './planning.js'
 import { isDirectory, normalizeProjectPath } from './projects.js'
 import type { ProjectRecord } from './domain.js'
+import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import {
   COMMANDS,
@@ -152,6 +153,8 @@ export class MateApp {
       case COMMANDS.requirementResolveProject: return this.resolveProject(args)
       case COMMANDS.projectRegister: return this.registerProject(args)
       case COMMANDS.projectPickDirectory: return this.pickDirectory()
+      case COMMANDS.projectCreate: return this.createProject(args)
+      case COMMANDS.projectRemove: return this.removeProject(args)
       case COMMANDS.sessionHide: return this.hideSession(args)
       case COMMANDS.sessionTranscript: return this.sessionTranscript(args)
       case COMMANDS.mateCreate: return this.createMate(args)
@@ -611,6 +614,28 @@ export class MateApp {
     return this.deps.store.registerProject(normalized.path, title)
   }
 
+  /** Unregister a project; the directory on disk is left alone. */
+  private async removeProject(args: Record<string, unknown>): Promise<{ removed: boolean }> {
+    const path = requiredString(args.path, 'project-path-required', 'A project path is required')
+    return { removed: await this.deps.store.removeProject(path) }
+  }
+  /** Create a directory (recursively) and register it as a project. */
+  private async createProject(args: Record<string, unknown>): Promise<ProjectRecord> {
+    const normalized = normalizeProjectPath(requiredString(args.path, 'project-path-required', 'A project path is required'))
+    if (!normalized.ok) throw new CommandError(normalized.error!.code, normalized.error!.message)
+    if (!isDirectory(normalized.path)) {
+      try {
+        mkdirSync(normalized.path, { recursive: true })
+      } catch (error) {
+        throw new CommandError('project-create-failed', `Could not create ${normalized.path}: ${String(error)}`)
+      }
+    }
+    if (!isDirectory(normalized.path)) {
+      throw new CommandError('project-create-failed', `Project directory could not be created: ${normalized.path}`)
+    }
+    const title = optionalString(args.title) || baseName(normalized.path)
+    return this.deps.store.registerProject(normalized.path, title)
+  }
   /** Open a native directory dialog (Electron) and register the chosen path. */
   private async pickDirectory(): Promise<{ path: string | null; project: ProjectRecord | null }> {
     const dialog = electronDialog()
@@ -1226,6 +1251,8 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export type { AnalysisView }
+
+
 
 
 
