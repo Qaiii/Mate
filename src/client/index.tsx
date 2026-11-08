@@ -157,6 +157,63 @@ export function apply(ctx: ClientContext): void {
       return { path: null, unavailable: true }
     }
   }
+  /**
+   * The composer's "/" menu belongs to the shipped input-trigger package. Two
+   * small document-level additions make it easier to scan at narrow widths:
+   * each command's description drops to its own line under the name, and the
+   * third-party /restart row gets the icon core only grants built-in commands.
+   * Both are guarded so a future core change cannot break the plugin.
+   */
+  ctx.effect(() => {
+    const style = document.createElement('style')
+    style.dataset.dshMate = 'command-menu'
+    style.textContent = `
+[data-trigger-menu] button[role="option"] { flex-wrap: wrap; row-gap: 1px; height: auto; min-height: 34px; align-content: flex-start; }
+[data-trigger-menu] button[role="option"] > span[class*="itemDescription"] {
+  flex: 1 0 100%;
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+[data-trigger-menu] button[role="option"]:has(> span[class*="itemIcon"]) > span[class*="itemDescription"],
+[data-trigger-menu] button[role="option"]:has(> span.dsh-mate-menu-icon) > span[class*="itemDescription"] {
+  margin-left: 20px;
+}
+.dsh-mate-menu-icon {
+  width: 14px; height: 14px; flex: none;
+  color: var(--dsw-alias-menu-icon, currentColor);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+`
+    document.head.appendChild(style)
+
+    const iconSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7" stroke-linecap="round"/><path d="M13 2.6v2.8h-2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    const decorate = (menu: Element): void => {
+      for (const row of Array.from(menu.querySelectorAll('button[role="option"]'))) {
+        const name = row.querySelector('[class*="itemName"]')?.textContent?.trim() ?? ''
+        if (name !== 'restart') continue
+        if (row.querySelector('[class*="itemIcon"]') !== null) continue
+        if (row.querySelector('.dsh-mate-menu-icon') !== null) continue
+        const icon = document.createElement('span')
+        icon.className = 'dsh-mate-menu-icon'
+        icon.setAttribute('aria-hidden', 'true')
+        icon.innerHTML = iconSvg
+        row.prepend(icon)
+      }
+    }
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (!(node instanceof HTMLElement)) continue
+          if (node.matches('[data-trigger-menu]')) decorate(node)
+          else if (node.querySelector('[data-trigger-menu]') !== null) decorate(node)
+        }
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => { observer.disconnect(); style.remove() }
+  }, 'dsh-mate: command menu decoration')
   const face: PanelFace = { controller, t, openSession, pickDirectory }
 
   ctx.slots.inject('main', () => ctx.slots.register({
@@ -172,6 +229,8 @@ export function apply(ctx: ClientContext): void {
     label: () => 'Mate',
   }, MateIcon))
 }
+
+
 
 
 
